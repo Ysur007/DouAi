@@ -96,6 +96,8 @@ public final class AutomationImages {
     }
 
     private static ChatImage fetch(String source, MediaReadCancellation cancellation) throws Exception {
+        ChatImage bridged = HostImageBridge.load(source, cancellation);
+        if (bridged != null) return bridged;
         String current = source;
         for (int redirect = 0; redirect < 4; redirect++) {
             cancellation.check();

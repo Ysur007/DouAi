@@ -528,6 +528,7 @@ public final class NativeMessagingHooks implements AutoCloseable {
 
     private void installReceive(XposedInterface framework, HostScanReport report, ClassLoader loader) {
         try {
+            HostImageBridge.install(loader);
             sdkUid = HostTargets.method(report, "adv_im_uid", loader);
             sdkBean = HostTargets.method(report, "adv_im_bean", loader);
             sdkConversations = HostTargets.method(report, "adv_im_conversations", loader);
