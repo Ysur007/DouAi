@@ -22,6 +22,8 @@ public final class AutomationReplyMedia {
     /** How long a reply may wait for the full-size original before falling back. */
     private static final long ORIGINAL_BUDGET_MILLIS = 12_000;
     private static final long ORIGINAL_BUDGET_WITH_INLINE_MILLIS = 2_500;
+    /** Share cards have no inline fallback but do have a title, so they wait briefly and degrade. */
+    private static final long SHARE_BUDGET_MILLIS = 6_000;
 
     private AutomationReplyMedia() { }
 
@@ -93,7 +95,8 @@ public final class AutomationReplyMedia {
 
     /** Loads verified explicit sources. IM encrypted payloads cannot supply videoUrl in this version. */
     static List<ChatImage> loadIncoming(Context context, List<String> urls, String videoUrl,
-                                       List<String> inlinePayloads, List<String> keyCandidates, LocalOptions options,
+                                       List<String> inlinePayloads, List<String> keyCandidates,
+                                       boolean textPresent, LocalOptions options,
                                        MediaReadCancellation cancellation) throws Exception {
         cancellation.start();
         cancellation.check();
@@ -114,9 +117,11 @@ public final class AutomationReplyMedia {
                 // With a decoded thumbnail in hand we never wait long; without one there is no fallback.
                 fetched = AutomationImages.load(
                         selected.subList(0, Math.min(imageLimit, selected.size())), keyCandidates, cancellation,
-                        inline.isEmpty() ? ORIGINAL_BUDGET_MILLIS : ORIGINAL_BUDGET_WITH_INLINE_MILLIS);
+                        inline.isEmpty() ? (textPresent ? SHARE_BUDGET_MILLIS : ORIGINAL_BUDGET_MILLIS)
+                                : ORIGINAL_BUDGET_WITH_INLINE_MILLIS);
             } catch (Exception failure) {
-                if (inline.isEmpty()) throw failure;
+                // A share card still has a title, so a cold cover must not sink the whole reply.
+                if (inline.isEmpty() && !textPresent) throw failure;
                 DouAiLog.event("auto_reply", "image_source", "inline_fallback",
                         "error=" + failure.getClass().getSimpleName());
                 fetched = Collections.emptyList();
