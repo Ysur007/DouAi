@@ -81,7 +81,9 @@ public final class HostImageBridge {
         try {
             Class<?> requestClass = Class.forName("com.facebook.imagepipeline.request.ImageRequest", false, loader);
             Class<?> pipelineClass = Class.forName("com.facebook.imagepipeline.core.ImagePipeline", false, loader);
-            Method submit = pipelineClass.getMethod("submitFetchRequest", requestClass, Object.class);
+            Method submit;
+            try { submit = pipelineClass.getMethod("submitFetchRequest", requestClass, Object.class); }
+            catch (NoSuchMethodException missing) { submit = pipelineClass.getMethod("fetchDecodedImage", requestClass, Object.class); }
             Method getSourceUri = requestClass.getMethod("getSourceUri");
             framework.hook(submit)
                     .setId("DouAi.HostImage.RequestCapture")
@@ -94,7 +96,7 @@ public final class HostImageBridge {
                         } catch (Throwable ignored) { }
                         return chain.proceed();
                     });
-            DouAiLog.event("auto_reply", "image_bridge", "capture_installed", "method=submitFetchRequest");
+            DouAiLog.event("auto_reply", "image_bridge", "capture_installed", "method=" + submit.getName());
         } catch (Throwable failure) {
             DouAiLog.event("auto_reply", "image_bridge", "capture_unavailable",
                     "error=" + failure.getClass().getSimpleName() + ":" + failure.getMessage());
