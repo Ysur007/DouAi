@@ -96,9 +96,12 @@ public final class AutomationImages {
             cancellation.check();
             if (!isMediaUrl(current)) throw new IllegalArgumentException("图片地址不受支持（仅允许公网 http/https）");
             HttpURLConnection connection = cancellation.open(URI.create(current));
+            int status = -1;
             try {
                 cancellation.check();
-                int status = connection.getResponseCode();
+                connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/120.0 Mobile Safari/537.36");
+                if (isByteDanceHost(hostOf(current))) connection.setRequestProperty("Referer", "https://www.douyin.com/");
+                status = connection.getResponseCode();
                 if (status >= 300 && status < 400) {
                     String location = connection.getHeaderField("Location");
                     if (location == null) throw new IllegalStateException("图片地址跳转无效");
@@ -110,16 +113,35 @@ public final class AutomationImages {
                 try (InputStream input = connection.getInputStream()) {
                     ChatImage image = ChatImageLoader.decode(ChatImageLoader.read(input, cancellation), cancellation);
                     cancellation.check();
+                    DouAiLog.event("auto_reply", "image_fetch", "ok", "host=" + hostOf(current) + ";bytes=" + image.sizeBytes());
                     return image;
                 }
             } catch (Exception failure) {
                 cancellation.check();
+                String detail = failure instanceof IllegalArgumentException || failure instanceof IllegalStateException
+                        ? String.valueOf(failure.getMessage()) : failure.getClass().getSimpleName();
+                DouAiLog.event("auto_reply", "image_fetch", "failed",
+                        "host=" + hostOf(current) + ";status=" + status + ";error=" + detail);
                 throw failure;
             } finally {
                 cancellation.close(connection);
             }
         }
         throw new IllegalStateException("图片地址跳转次数过多");
+    }
+
+    private static String hostOf(String value) {
+        try { String host = URI.create(value).getHost(); return host == null ? "" : host; }
+        catch (RuntimeException ignored) { return ""; }
+    }
+
+    private static boolean isByteDanceHost(String host) {
+        if (host == null || host.isEmpty()) return false;
+        for (String domain : new String[]{"douyinpic.com", "byteimg.com", "ibyteimg.com", "pstatp.com",
+                "douyincdn.com", "snssdk.com", "bytedance.com", "bytecdn.cn", "douyinstatic.com"}) {
+            if (host.equals(domain) || host.endsWith("." + domain)) return true;
+        }
+        return false;
     }
 
     public static boolean isMediaUrl(String value) {
