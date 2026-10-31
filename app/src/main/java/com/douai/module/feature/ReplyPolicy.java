@@ -62,6 +62,8 @@ public final class ReplyPolicy {
 
     /** Douyin renders big stickers as their own message type; the label is all the model needs. */
     private static final int STICKER_TYPE = 5;
+    /** Shared work/video card: title plus a cover image, no playable source in the payload. */
+    private static final int SHARE_VIDEO_TYPE = 8;
     private static volatile boolean stickerSampled;
 
     private static String stickerLabel(JSONObject content) {
@@ -79,6 +81,12 @@ public final class ReplyPolicy {
                             + ";aweType=" + clip(content.optString("aweType", "")));
         }
         return "[对方发来表情：" + (name.isEmpty() ? "表情" : name) + "]";
+    }
+
+    private static String shareLabel(JSONObject content) {
+        String name = content.optString("content_name", "").trim();
+        if (name.isEmpty()) name = content.optString("title", "").trim();
+        return name.isEmpty() ? "[对方分享了一个视频]" : "[对方分享了一个视频：《" + clip(name) + "》]";
     }
 
     private static String clip(String value) {
@@ -116,7 +124,7 @@ public final class ReplyPolicy {
                     : conversation == null || conversation.isEmpty() ? "conversation_missing"
                     : id == null || !id.matches("[1-9][0-9]*") ? "server_id_missing_or_local_message"
                     : type == null ? "message_type_missing"
-                    : type != 7 && !(ai && (type == 27 || STICKER_TYPE == type
+                    : type != 7 && !(ai && (type == 27 || STICKER_TYPE == type || SHARE_VIDEO_TYPE == type
                             || AutomationReplyMedia.isVideoMessageType(type))) ? "message_type_unsupported_in_mode"
                     : conversationType != null && conversationType != 1 && conversationType != 2 ? "conversation_type_unsupported"
                     : created == null ? "timestamp_missing" : created < startedAt - 30_000 ? "historical_message" : "";
@@ -126,12 +134,18 @@ public final class ReplyPolicy {
             if (group && !options.enabled("reply_group_chats", false)) return rejected("group_replies_disabled", "group=true");
             if (!group && !options.enabled("reply_private_chats", true)) return rejected("private_replies_disabled", "group=false");
             JSONObject content = new JSONObject(values.getAsString("content"));
-            boolean recognize = type == 27 && options.enabled(LocalOptions.REPLY_RECOGNIZE_IMAGES, true);
+            // A shared video carries its cover in content_thumb, which travels through the same
+            // encrypted-URL path as an ordinary picture.
+            boolean recognize = (type == 27 || SHARE_VIDEO_TYPE == type)
+                    && options.enabled(LocalOptions.REPLY_RECOGNIZE_IMAGES, true);
             java.util.List<String> images = recognize
                     ? AutomationReplyMedia.incomingImages(content) : java.util.Collections.emptyList();
             java.util.List<String> inline = recognize
                     ? AutomationImages.inlinePayloads(content) : java.util.Collections.emptyList();
-            if (recognize && images.isEmpty() && inline.isEmpty()) return rejected("image_source_missing", "type=27;recognize_images=true");
+            // A picture is useless without a source; a share card still has its title to answer to.
+            if (type == 27 && recognize && images.isEmpty() && inline.isEmpty()) {
+                return rejected("image_source_missing", "type=27;recognize_images=true");
+            }
             if (recognize) DouAiLog.event("auto_reply", "image_payload", "shape", AutomationImages.shape(content));
             boolean videoMessage = AutomationReplyMedia.isVideoMessageType(type);
             String video = videoMessage
@@ -142,6 +156,7 @@ public final class ReplyPolicy {
             if (video == null) video = "";
             String text = content.optString("text", "").trim();
             if (STICKER_TYPE == type) text = stickerLabel(content);
+            if (SHARE_VIDEO_TYPE == type) text = shareLabel(content);
             String messageText = text;
             if (text.isEmpty() && (!images.isEmpty() || !inline.isEmpty())) text = "请根据对方发来的图片回复对方。";
             if (text.isEmpty() && !video.isEmpty()) text = "请根据对方发来的视频画面回复对方。";
