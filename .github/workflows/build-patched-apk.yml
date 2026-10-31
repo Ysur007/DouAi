@@ -73,6 +73,17 @@ jobs:
         run: |
           mkdir -p out
           find app/build/outputs/apk/release -maxdepth 1 -name "*.apk" -exec cp {} out/ \;
+      - name: Verify release signature
+        run: |
+          APK=$(find out -maxdepth 1 -name "*.apk" | head -1)
+          if [ -z "$APK" ]; then echo "::error::no APK produced"; exit 1; fi
+          if echo "$APK" | grep -q unsigned; then
+            echo "::error::unsigned APK: release signing secrets are missing"
+            exit 1
+          fi
+          SIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort | tail -1)
+          "$SIGNER" verify --print-certs "$APK" | head -4
+
           ls -lh out
           sha256sum out/*.apk
 
