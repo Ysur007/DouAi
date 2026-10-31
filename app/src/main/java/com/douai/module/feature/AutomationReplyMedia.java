@@ -6,6 +6,8 @@ import com.douai.module.config.LocalOptions;
 import org.json.JSONObject;
 
 import java.io.File;
+import com.douai.module.diagnostics.DouAiLog;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
@@ -95,11 +97,31 @@ public final class AutomationReplyMedia {
         boolean video = options.enabled(RECOGNIZE_VIDEO, false) && videoUrl != null && !videoUrl.isEmpty();
         // The embedded thumbnail is already decrypted by the sender, so it outranks CDN fetching.
         List<ChatImage> inline = images ? AutomationImages.decodeInline(inlinePayloads) : Collections.emptyList();
-        List<String> selected = images && inline.isEmpty() && urls != null ? urls : Collections.emptyList();
+        boolean hasKeys = keyCandidates != null && !keyCandidates.isEmpty();
+        // The embedded thumbnail is always usable; the encrypted CDN payload is preferred only when a
+        // message-carried key is available, because it carries the full resolution.
+        List<String> selected = images && urls != null && (inline.isEmpty() || hasKeys)
+                ? urls : Collections.emptyList();
         int imageLimit = video ? 1 : ChatCompletionClient.MAX_IMAGES_PER_MESSAGE;
         List<ChatImage> result = new ArrayList<>(inline);
-        if (!selected.isEmpty()) result.addAll(AutomationImages.load(
-                selected.subList(0, Math.min(imageLimit, selected.size())), keyCandidates, cancellation));
+        if (!selected.isEmpty()) {
+            List<ChatImage> fetched;
+            try {
+                fetched = AutomationImages.load(
+                        selected.subList(0, Math.min(imageLimit, selected.size())), keyCandidates, cancellation);
+            } catch (Exception failure) {
+                if (inline.isEmpty()) throw failure;
+                DouAiLog.event("auto_reply", "image_source", "inline_fallback",
+                        "error=" + failure.getClass().getSimpleName());
+                fetched = Collections.emptyList();
+            }
+            if (!fetched.isEmpty()) {
+                DouAiLog.event("auto_reply", "image_source", "original",
+                        "count=" + fetched.size() + ";replaced_inline=" + inline.size());
+                result.clear();
+                result.addAll(fetched);
+            }
+        }
         if (video) {
             File local = AutomationCommentMedia.downloadVideo(context, videoUrl, cancellation);
             try { result.addAll(ChatMediaLoader.loadVideoFile(local,
