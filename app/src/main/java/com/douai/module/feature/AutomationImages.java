@@ -1,5 +1,7 @@
 package com.douai.module.feature;
 
+import com.douai.module.diagnostics.DouAiLog;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -17,18 +19,57 @@ public final class AutomationImages {
     private AutomationImages() { }
 
     public static List<String> incoming(JSONObject content) {
-        JSONObject resource = content.optJSONObject("resource_url");
-        if (resource == null) resource = content.optJSONObject("url");
-        if (resource == null) return Collections.emptyList();
-        JSONArray urls = resource.optJSONArray("url_list");
-        if (urls == null) return Collections.emptyList();
+        if (content == null) return Collections.emptyList();
         Set<String> result = new LinkedHashSet<>();
-        for (int i = 0; i < urls.length(); i++) {
-            String value = urls.optString(i, "");
-            if (isMediaUrl(value)) result.add(value);
-            if (result.size() >= ChatCompletionClient.MAX_IMAGES_PER_MESSAGE) break;
+        collect(content, result, 0);
+        if (result.isEmpty()) {
+            DouAiLog.event("auto_reply", "image_payload", "no_media_url", "keys=" + keys(content));
         }
         return Collections.unmodifiableList(new ArrayList<>(result));
+    }
+
+    /** Walks the payload instead of trusting one field name; the host schema changes between builds. */
+    private static void collect(Object node, Set<String> out, int depth) {
+        if (node == null || depth > 6 || out.size() >= ChatCompletionClient.MAX_IMAGES_PER_MESSAGE) return;
+        if (node instanceof JSONObject) {
+            JSONObject object = (JSONObject) node;
+            java.util.Iterator<String> names = object.keys();
+            while (names.hasNext()) {
+                Object value = object.opt(names.next());
+                if (value instanceof String) {
+                    String text = (String) value;
+                    if (isMediaUrl(text)) out.add(text);
+                } else {
+                    collect(value, out, depth + 1);
+                }
+                if (out.size() >= ChatCompletionClient.MAX_IMAGES_PER_MESSAGE) return;
+            }
+        } else if (node instanceof JSONArray) {
+            JSONArray array = (JSONArray) node;
+            for (int i = 0; i < array.length(); i++) {
+                Object value = array.opt(i);
+                if (value instanceof String) {
+                    String text = (String) value;
+                    if (isMediaUrl(text)) out.add(text);
+                } else {
+                    collect(value, out, depth + 1);
+                }
+                if (out.size() >= ChatCompletionClient.MAX_IMAGES_PER_MESSAGE) return;
+            }
+        }
+    }
+
+    /** Key names only; payload values are never written to the log. */
+    private static String keys(JSONObject content) {
+        StringBuilder text = new StringBuilder();
+        java.util.Iterator<String> names = content.keys();
+        int count = 0;
+        while (names.hasNext() && count < 12) {
+            if (text.length() > 0) text.append(',');
+            text.append(names.next());
+            count++;
+        }
+        return text.toString();
     }
 
     public static List<ChatImage> load(List<String> urls) throws Exception {
