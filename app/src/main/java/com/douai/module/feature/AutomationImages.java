@@ -24,6 +24,39 @@ public final class AutomationImages {
     private static final int MAX_PARALLEL_SOURCES = 6;
     /** Extra window after the first variant lands, so a larger copy can still be chosen. */
     private static final long RACE_GRACE_MILLIS = 2_500;
+    /** Decrypted images keyed by source url, so a repeated fetch costs nothing. */
+    private static final java.util.Map<String, ChatImage> CACHE =
+            java.util.Collections.synchronizedMap(new java.util.LinkedHashMap<String, ChatImage>(8, 0.75f, true) {
+                @Override protected boolean removeEldestEntry(java.util.Map.Entry<String, ChatImage> eldest) {
+                    return size() > 8;
+                }
+            });
+    private static final java.util.concurrent.ExecutorService PREFETCH =
+            java.util.concurrent.Executors.newSingleThreadExecutor(runnable -> {
+                Thread thread = new Thread(runnable, "DouAi-ImagePrefetch");
+                thread.setDaemon(true);
+                return thread;
+            });
+
+    /**
+     * Starts resolving the original as soon as the message arrives: the reply pipeline needs a
+     * couple of seconds of context first, and a cold CDN edge can take far longer than that.
+     */
+    public static void prefetch(List<String> urls, List<String> keyCandidates) {
+        if (urls == null || urls.isEmpty()) return;
+        List<String> copy = new ArrayList<>(urls.subList(0, Math.min(MAX_PARALLEL_SOURCES, urls.size())));
+        List<String> keys = keyCandidates == null ? new ArrayList<>() : new ArrayList<>(keyCandidates);
+        PREFETCH.execute(() -> {
+            try {
+                for (String url : copy) {
+                    if (CACHE.containsKey(url)) continue;
+                    MediaReadCancellation own = new MediaReadCancellation();
+                    ChatImage image = fetch(url, keys, own);
+                    if (image != null) CACHE.put(url, image);
+                }
+            } catch (Throwable ignored) { }
+        });
+    }
 
     private AutomationImages() { }
 
@@ -179,7 +212,21 @@ public final class AutomationImages {
 
     static List<ChatImage> load(List<String> urls, List<String> keyCandidates,
                                 MediaReadCancellation cancellation) throws Exception {
+        return load(urls, keyCandidates, cancellation, MEDIA_BUDGET_MILLIS);
+    }
+
+    static List<ChatImage> load(List<String> urls, List<String> keyCandidates,
+                                MediaReadCancellation cancellation, long budgetMillis) throws Exception {
         cancellation.start();
+        for (String url : urls) {
+            ChatImage hit = CACHE.get(url);
+            if (hit != null) {
+                DouAiLog.event("auto_reply", "image_source", "cache_hit", "bytes=" + hit.sizeBytes());
+                List<ChatImage> cached = new ArrayList<>();
+                cached.add(hit);
+                return cached;
+            }
+        }
         if (urls.size() > ChatCompletionClient.MAX_IMAGES_PER_MESSAGE) throw new IllegalArgumentException("图片最多 " + ChatCompletionClient.MAX_IMAGES_PER_MESSAGE + " 张");
         // Signed CDN edges vary in warmth: the same object can take 40s on one host and 200ms on
         // another, so every candidate is started at once and the first complete image wins.
@@ -199,7 +246,7 @@ public final class AutomationImages {
             long graceDeadline = 0;
             for (int i = 0; i < candidates.size(); i++) {
                 long wait = graceDeadline == 0
-                        ? MEDIA_BUDGET_MILLIS
+                        ? budgetMillis
                         : Math.max(1, graceDeadline - SystemClock.elapsedRealtime());
                 java.util.concurrent.Future<ChatImage> done;
                 try {
@@ -227,7 +274,8 @@ public final class AutomationImages {
                 if (candidate.sizeBytes() > winner.sizeBytes()) winner = candidate;
             }
             DouAiLog.event("auto_reply", "image_source", "race_result",
-                    "variants=" + finished.size() + ";picked=" + winner.sizeBytes());
+                    "variants=" + finished.size() + ";picked=" + winner.sizeBytes() + ";budget=" + budgetMillis);
+            for (String url : candidates) CACHE.put(url, winner);
             List<ChatImage> images = new ArrayList<>();
             images.add(winner);
             return images;

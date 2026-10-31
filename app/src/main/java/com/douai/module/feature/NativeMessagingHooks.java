@@ -688,6 +688,9 @@ public final class NativeMessagingHooks implements AutoCloseable {
             safeLog("Automatic reply receipt skipped source=" + source + " reason=policy");
             return;
         }
+        // Start resolving the picture now: context building takes a couple of seconds and a cold
+        // CDN edge can take far longer than the reply pipeline is willing to wait.
+        AutomationImages.prefetch(incoming.imageUrls, incoming.keyCandidates);
         String recipient = Long.toString(incoming.sender);
         if (!rateLimiter.canSend(AutomationHistoryStore.REPLY, account, recipient, current)) {
             DouAiLog.event("auto_reply", "receipt_skipped", "allowance", "source=" + source);

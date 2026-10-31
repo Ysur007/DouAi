@@ -19,6 +19,10 @@ public final class AutomationReplyMedia {
     public static final String RECOGNIZE_IMAGES = "reply_recognize_images";
     public static final String RECOGNIZE_VIDEO = "reply_recognize_video";
 
+    /** How long a reply may wait for the full-size original before falling back. */
+    private static final long ORIGINAL_BUDGET_MILLIS = 12_000;
+    private static final long ORIGINAL_BUDGET_WITH_INLINE_MILLIS = 5_000;
+
     private AutomationReplyMedia() { }
 
     static List<ChatImage> comment(Context context, CommentReplyEvent event, LocalOptions options,
@@ -107,8 +111,10 @@ public final class AutomationReplyMedia {
         if (!selected.isEmpty()) {
             List<ChatImage> fetched;
             try {
+                // With a decoded thumbnail in hand we never wait long; without one there is no fallback.
                 fetched = AutomationImages.load(
-                        selected.subList(0, Math.min(imageLimit, selected.size())), keyCandidates, cancellation);
+                        selected.subList(0, Math.min(imageLimit, selected.size())), keyCandidates, cancellation,
+                        inline.isEmpty() ? ORIGINAL_BUDGET_MILLIS : ORIGINAL_BUDGET_WITH_INLINE_MILLIS);
             } catch (Exception failure) {
                 if (inline.isEmpty()) throw failure;
                 DouAiLog.event("auto_reply", "image_source", "inline_fallback",
