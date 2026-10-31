@@ -21,6 +21,7 @@ public final class HostImageBridge {
     private static final int TIMEOUT_SECONDS = 15;
     private static final int MAX_EDGE = 2048;
     private static volatile HostImageBridge instance;
+    private static volatile ClassLoader hostLoader;
 
     private final ClassLoader loader;
     private final Object pipeline;
@@ -58,45 +59,68 @@ public final class HostImageBridge {
         this.referenceClose = referenceClose;
     }
 
-    public static void install(ClassLoader hostLoader) {
-        if (instance != null || hostLoader == null) return;
-        try {
-            Class<?> fresco = Class.forName("com.facebook.drawee.backends.pipeline.Fresco", false, hostLoader);
-            Object factory = fresco.getMethod("getImagePipelineFactory").invoke(null);
-            Object pipeline = factory.getClass().getMethod("getImagePipeline").invoke(factory);
+    /** Only remembers the host loader; Fresco may not be initialised yet at install time. */
+    public static void install(ClassLoader loader) {
+        if (loader != null) hostLoader = loader;
+    }
 
-            Class<?> requestClass = Class.forName("com.facebook.imagepipeline.request.ImageRequest", false, hostLoader);
-            Method fromUriUri;
-            Method fromUriString;
-            try { fromUriUri = requestClass.getMethod("fromUri", Uri.class); }
-            catch (NoSuchMethodException missing) { fromUriUri = null; }
-            try { fromUriString = requestClass.getMethod("fromUri", String.class); }
-            catch (NoSuchMethodException missing) { fromUriString = null; }
-            if (fromUriUri == null && fromUriString == null) throw new NoSuchMethodException("ImageRequest.fromUri");
-
-            Method fetch = pipeline.getClass().getMethod("fetchDecodedImage", requestClass, Object.class);
-            Class<?> dataSource = Class.forName("com.facebook.datasource.DataSource", false, hostLoader);
-            Class<?> subscriber = Class.forName("com.facebook.datasource.DataSubscriber", false, hostLoader);
-            Method subscribe = dataSource.getMethod("subscribe", subscriber, java.util.concurrent.Executor.class);
-            Method close = dataSource.getMethod("close");
-            Method isFinished = dataSource.getMethod("isFinished");
-            Method getResult = dataSource.getMethod("getResult");
-
-            Class<?> reference = Class.forName("com.facebook.common.references.CloseableReference", false, hostLoader);
-            Method referenceGet = reference.getMethod("get");
-            Method referenceClose = reference.getMethod("close");
-
-            instance = new HostImageBridge(hostLoader, pipeline, fetch, fromUriUri, fromUriString,
-                    subscribe, close, isFinished, getResult, subscriber, referenceGet, referenceClose);
-            DouAiLog.event("auto_reply", "image_bridge", "installed", "pipeline_present=true");
-        } catch (Throwable failure) {
-            DouAiLog.event("auto_reply", "image_bridge", "install_failed",
-                    "error=" + failure.getClass().getSimpleName() + ":" + failure.getMessage());
+    private static HostImageBridge bridge() {
+        HostImageBridge current = instance;
+        if (current != null) return current;
+        synchronized (HostImageBridge.class) {
+            if (instance != null) return instance;
+            ClassLoader loader = hostLoader != null ? hostLoader : HostImageBridge.class.getClassLoader();
+            try {
+                instance = create(loader);
+                DouAiLog.event("auto_reply", "image_bridge", "installed", "pipeline_present=true");
+            } catch (Throwable failure) {
+                DouAiLog.event("auto_reply", "image_bridge", "install_failed",
+                        "error=" + failure.getClass().getSimpleName() + ":" + failure.getMessage());
+            }
+            return instance;
         }
     }
 
+    private static HostImageBridge create(ClassLoader hostLoader) throws Exception {
+        Object pipeline = null;
+        try {
+            Class<?> factoryClass = Class.forName("com.facebook.imagepipeline.core.ImagePipelineFactory", false, hostLoader);
+            Object factory = factoryClass.getMethod("getInstance").invoke(null);
+            pipeline = factoryClass.getMethod("getImagePipeline").invoke(factory);
+        } catch (Throwable ignored) { }
+        if (pipeline == null) {
+            Class<?> fresco = Class.forName("com.facebook.drawee.backends.pipeline.Fresco", false, hostLoader);
+            pipeline = fresco.getMethod("getImagePipeline").invoke(null);
+        }
+        if (pipeline == null) throw new IllegalStateException("pipeline_missing");
+
+        Class<?> requestClass = Class.forName("com.facebook.imagepipeline.request.ImageRequest", false, hostLoader);
+        Method fromUriUri;
+        Method fromUriString;
+        try { fromUriUri = requestClass.getMethod("fromUri", Uri.class); }
+        catch (NoSuchMethodException missing) { fromUriUri = null; }
+        try { fromUriString = requestClass.getMethod("fromUri", String.class); }
+        catch (NoSuchMethodException missing) { fromUriString = null; }
+        if (fromUriUri == null && fromUriString == null) throw new NoSuchMethodException("ImageRequest.fromUri");
+
+        Method fetch = pipeline.getClass().getMethod("fetchDecodedImage", requestClass, Object.class);
+        Class<?> dataSource = Class.forName("com.facebook.datasource.DataSource", false, hostLoader);
+        Class<?> subscriber = Class.forName("com.facebook.datasource.DataSubscriber", false, hostLoader);
+        Method subscribe = dataSource.getMethod("subscribe", subscriber, java.util.concurrent.Executor.class);
+        Method close = dataSource.getMethod("close");
+        Method isFinished = dataSource.getMethod("isFinished");
+        Method getResult = dataSource.getMethod("getResult");
+
+        Class<?> reference = Class.forName("com.facebook.common.references.CloseableReference", false, hostLoader);
+        Method referenceGet = reference.getMethod("get");
+        Method referenceClose = reference.getMethod("close");
+
+        return new HostImageBridge(hostLoader, pipeline, fetch, fromUriUri, fromUriString,
+                subscribe, close, isFinished, getResult, subscriber, referenceGet, referenceClose);
+    }
+
     public static ChatImage load(String url, MediaReadCancellation cancellation) {
-        HostImageBridge bridge = instance;
+        HostImageBridge bridge = bridge();
         if (bridge == null || url == null || url.isEmpty()) return null;
         try {
             cancellation.check();
