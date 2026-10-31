@@ -12,6 +12,11 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+import io.github.libxposed.api.XposedInterface;
 
 /**
  * Reuses the host Fresco pipeline so encrypted IM payloads are fetched, decrypted and decoded by
@@ -22,6 +27,12 @@ public final class HostImageBridge {
     private static final int MAX_EDGE = 2048;
     private static volatile HostImageBridge instance;
     private static volatile ClassLoader hostLoader;
+    private static final Map<String, Object> CAPTURED = Collections.synchronizedMap(
+            new LinkedHashMap<String, Object>(16, 0.75f, true) {
+                @Override protected boolean removeEldestEntry(Map.Entry<String, Object> eldest) {
+                    return size() > 24;
+                }
+            });
 
     private final ClassLoader loader;
     private final Object pipeline;
@@ -60,8 +71,34 @@ public final class HostImageBridge {
     }
 
     /** Only remembers the host loader; Fresco may not be initialised yet at install time. */
-    public static void install(ClassLoader loader) {
+    public static void install(ClassLoader loader, XposedInterface framework) {
         if (loader != null) hostLoader = loader;
+        if (framework != null) captureRequests(framework, loader);
+    }
+
+    /** Remembers the request the host itself builds for a URI, including any decryption extras. */
+    private static void captureRequests(XposedInterface framework, ClassLoader loader) {
+        try {
+            Class<?> requestClass = Class.forName("com.facebook.imagepipeline.request.ImageRequest", false, loader);
+            Class<?> pipelineClass = Class.forName("com.facebook.imagepipeline.core.ImagePipeline", false, loader);
+            Method submit = pipelineClass.getMethod("submitFetchRequest", requestClass, Object.class);
+            Method getSourceUri = requestClass.getMethod("getSourceUri");
+            framework.hook(submit)
+                    .setId("DouAi.HostImage.RequestCapture")
+                    .setExceptionMode(XposedInterface.ExceptionMode.PASSTHROUGH)
+                    .intercept(chain -> {
+                        try {
+                            Object request = chain.getArg(0);
+                            Object uri = getSourceUri.invoke(request);
+                            if (uri != null) CAPTURED.put(uri.toString(), request);
+                        } catch (Throwable ignored) { }
+                        return chain.proceed();
+                    });
+            DouAiLog.event("auto_reply", "image_bridge", "capture_installed", "method=submitFetchRequest");
+        } catch (Throwable failure) {
+            DouAiLog.event("auto_reply", "image_bridge", "capture_unavailable",
+                    "error=" + failure.getClass().getSimpleName() + ":" + failure.getMessage());
+        }
     }
 
     private static HostImageBridge bridge() {
@@ -136,9 +173,12 @@ public final class HostImageBridge {
     }
 
     private ChatImage fetch(String url, MediaReadCancellation cancellation) throws Exception {
-        Object request = fromUriUri != null
-                ? fromUriUri.invoke(null, Uri.parse(url))
-                : fromUriString.invoke(null, url);
+        Object request = CAPTURED.get(url);
+        if (request == null) {
+            request = fromUriUri != null
+                    ? fromUriUri.invoke(null, Uri.parse(url))
+                    : fromUriString.invoke(null, url);
+        }
         Object dataSource = fetchDecodedImage.invoke(pipeline, request, "DouAi:auto-reply");
         if (dataSource == null) throw new IllegalStateException("empty_data_source");
 
@@ -153,9 +193,19 @@ public final class HostImageBridge {
                             }
                             return null;
                         }
-                        case "onFailure":
-                            result.completeExceptionally(new IllegalStateException("host_fetch_failed"));
+                        case "onFailure": {
+                            String cause = "";
+                            try {
+                                Object source = args == null || args.length == 0 ? null : args[0];
+                                Object value = source == null ? null
+                                        : source.getClass().getMethod("getFailureCause").invoke(source);
+                                if (value instanceof Throwable) {
+                                    cause = ((Throwable) value).getClass().getSimpleName() + ":" + ((Throwable) value).getMessage();
+                                }
+                            } catch (Throwable ignored) { }
+                            result.completeExceptionally(new IllegalStateException("host_fetch_failed" + (cause.isEmpty() ? "" : ":" + cause)));
                             return null;
+                        }
                         case "onCancellation":
                             result.cancel(false);
                             return null;
