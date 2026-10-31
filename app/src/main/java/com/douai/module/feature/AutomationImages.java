@@ -80,7 +80,12 @@ public final class AutomationImages {
         cancellation.start();
         if (urls.size() > ChatCompletionClient.MAX_IMAGES_PER_MESSAGE) throw new IllegalArgumentException("图片最多 " + ChatCompletionClient.MAX_IMAGES_PER_MESSAGE + " 张");
         List<ChatImage> images = new ArrayList<>();
-        for (String source : urls) images.add(fetch(source, cancellation));
+        Exception last = null;
+        for (String source : urls) {
+            try { images.add(fetch(source, cancellation)); }
+            catch (Exception failure) { last = failure; }
+        }
+        if (images.isEmpty() && last != null) throw last;
         return images;
     }
 
@@ -97,6 +102,7 @@ public final class AutomationImages {
             if (!isMediaUrl(current)) throw new IllegalArgumentException("图片地址不受支持（仅允许公网 http/https）");
             HttpURLConnection connection = cancellation.open(URI.create(current));
             int status = -1;
+            byte[] body = null;
             try {
                 cancellation.check();
                 connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/120.0 Mobile Safari/537.36");
@@ -111,17 +117,21 @@ public final class AutomationImages {
                 if (status != 200) throw new IllegalStateException("图片下载失败");
                 if (connection.getContentLengthLong() > ChatImageLoader.MAX_SOURCE_BYTES) throw new IllegalArgumentException("图片超过 " + (ChatImageLoader.MAX_SOURCE_BYTES / (1024 * 1024)) + " MB");
                 try (InputStream input = connection.getInputStream()) {
-                    ChatImage image = ChatImageLoader.decode(ChatImageLoader.read(input, cancellation), cancellation);
-                    cancellation.check();
-                    DouAiLog.event("auto_reply", "image_fetch", "ok", "host=" + hostOf(current) + ";bytes=" + image.sizeBytes());
-                    return image;
+                    body = ChatImageLoader.read(input, cancellation);
                 }
+                byte[] data = isGzip(body) ? gunzip(body) : body;
+                ChatImage image = ChatImageLoader.decode(data, cancellation);
+                cancellation.check();
+                DouAiLog.event("auto_reply", "image_fetch", "ok",
+                        "host=" + hostOf(current) + ";bytes=" + image.sizeBytes() + ";magic=" + magic(body));
+                return image;
             } catch (Exception failure) {
                 cancellation.check();
                 String detail = failure instanceof IllegalArgumentException || failure instanceof IllegalStateException
                         ? String.valueOf(failure.getMessage()) : failure.getClass().getSimpleName();
                 DouAiLog.event("auto_reply", "image_fetch", "failed",
-                        "host=" + hostOf(current) + ";status=" + status + ";type=" + connection.getContentType() + ";error=" + detail);
+                        "host=" + hostOf(current) + ";status=" + status + ";type=" + connection.getContentType()
+                                + ";encoding=" + connection.getContentEncoding() + ";magic=" + magic(body) + ";error=" + detail);
                 throw failure;
             } finally {
                 cancellation.close(connection);
@@ -130,18 +140,30 @@ public final class AutomationImages {
         throw new IllegalStateException("图片地址跳转次数过多");
     }
 
-    private static String hostOf(String value) {
-        try { String host = URI.create(value).getHost(); return host == null ? "" : host; }
-        catch (RuntimeException ignored) { return ""; }
+    private static boolean isGzip(byte[] data) {
+        return data != null && data.length > 2 && (data[0] & 0xFF) == 0x1F && (data[1] & 0xFF) == 0x8B;
     }
 
-    private static boolean isByteDanceHost(String host) {
-        if (host == null || host.isEmpty()) return false;
-        for (String domain : new String[]{"douyinpic.com", "byteimg.com", "ibyteimg.com", "pstatp.com",
-                "douyincdn.com", "snssdk.com", "bytedance.com", "bytecdn.cn", "douyinstatic.com"}) {
-            if (host.equals(domain) || host.endsWith("." + domain)) return true;
+    private static byte[] gunzip(byte[] data) throws Exception {
+        try (java.util.zip.GZIPInputStream input = new java.util.zip.GZIPInputStream(new java.io.ByteArrayInputStream(data));
+             java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream()) {
+            byte[] buffer = new byte[8192];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                output.write(buffer, 0, count);
+                if (output.size() > ChatImageLoader.MAX_SOURCE_BYTES) {
+                    throw new IllegalArgumentException("图片超过 " + (ChatImageLoader.MAX_SOURCE_BYTES / (1024 * 1024)) + " MB");
+                }
+            }
+            return output.toByteArray();
         }
-        return false;
+    }
+
+    private static String magic(byte[] data) {
+        if (data == null || data.length == 0) return "";
+        StringBuilder text = new StringBuilder();
+        for (int i = 0; i < Math.min(4, data.length); i++) text.append(String.format("%02x", data[i] & 0xFF));
+        return text.toString();
     }
 
     public static boolean isMediaUrl(String value) {
