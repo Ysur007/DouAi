@@ -60,6 +60,32 @@ public final class ReplyPolicy {
         }
     }
 
+    /** Douyin renders big stickers as their own message type; the label is all the model needs. */
+    private static final int STICKER_TYPE = 5;
+    private static volatile boolean stickerSampled;
+
+    private static String stickerLabel(JSONObject content) {
+        String name = content.optString("display_name", "").trim();
+        if (name.isEmpty()) name = content.optString("name", "").trim();
+        if (name.isEmpty()) name = content.optString("danmaku_text", "").trim();
+        if (!stickerSampled) {
+            stickerSampled = true;
+            DouAiLog.event("auto_reply", "content_probe", "sticker_fields",
+                    "display_name=" + clip(content.optString("display_name", ""))
+                            + ";emoji_source=" + clip(content.optString("emoji_source", ""))
+                            + ";emoji_type=" + clip(content.optString("emoji_type", ""))
+                            + ";image_id=" + clip(content.optString("image_id", ""))
+                            + ";id=" + clip(content.optString("id", ""))
+                            + ";aweType=" + clip(content.optString("aweType", "")));
+        }
+        return "[对方发来表情：" + (name.isEmpty() ? "表情" : name) + "]";
+    }
+
+    private static String clip(String value) {
+        if (value == null) return "";
+        return value.length() > 24 ? value.substring(0, 24) + "~" + value.length() : value;
+    }
+
     private static final java.util.Set<Integer> PROBED_TYPES =
             java.util.Collections.synchronizedSet(new java.util.HashSet<Integer>());
 
@@ -90,7 +116,8 @@ public final class ReplyPolicy {
                     : conversation == null || conversation.isEmpty() ? "conversation_missing"
                     : id == null || !id.matches("[1-9][0-9]*") ? "server_id_missing_or_local_message"
                     : type == null ? "message_type_missing"
-                    : type != 7 && !(ai && (type == 27 || AutomationReplyMedia.isVideoMessageType(type))) ? "message_type_unsupported_in_mode"
+                    : type != 7 && !(ai && (type == 27 || STICKER_TYPE == type
+                            || AutomationReplyMedia.isVideoMessageType(type))) ? "message_type_unsupported_in_mode"
                     : conversationType != null && conversationType != 1 && conversationType != 2 ? "conversation_type_unsupported"
                     : created == null ? "timestamp_missing" : created < startedAt - 30_000 ? "historical_message" : "";
             if ("message_type_unsupported_in_mode".equals(rejected)) probeUnsupportedType(type, values);
@@ -114,6 +141,7 @@ public final class ReplyPolicy {
             if (videoMessage && (video == null || video.isEmpty())) return rejected("video_disabled_or_playable_source_unproved", "type=" + type);
             if (video == null) video = "";
             String text = content.optString("text", "").trim();
+            if (STICKER_TYPE == type) text = stickerLabel(content);
             String messageText = text;
             if (text.isEmpty() && (!images.isEmpty() || !inline.isEmpty())) text = "请根据对方发来的图片回复对方。";
             if (text.isEmpty() && !video.isEmpty()) text = "请根据对方发来的视频画面回复对方。";
