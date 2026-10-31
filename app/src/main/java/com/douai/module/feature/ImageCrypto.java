@@ -23,6 +23,11 @@ final class ImageCrypto {
     };
     private static final int[] IV_LENGTHS = {16, 12, 0};
 
+    /** The winning combination for this host build; reused so a later image costs one decrypt. */
+    private static volatile String learnedMode;
+    private static volatile int learnedKeySize;
+    private static volatile int learnedIv;
+
     static final class Result {
         final byte[] data;
         final String label;
@@ -32,6 +37,8 @@ final class ImageCrypto {
     /** Attempts every plausible key/IV/mode combination and returns the first that yields an image. */
     static Result attempt(byte[] body, List<String> candidates) {
         if (body == null || body.length < 32 || candidates == null || candidates.isEmpty()) return null;
+        Result fast = attemptLearned(body, candidates);
+        if (fast != null) return fast;
         for (String candidate : candidates) {
             for (byte[] key : keyForms(candidate)) {
                 for (String mode : MODES) {
@@ -40,9 +47,28 @@ final class ImageCrypto {
                         if (mode.contains("GCM") && ivLength == 0) continue;
                         byte[] plain = decrypt(body, key, mode, ivLength);
                         if (plain != null && looksLikeImage(plain)) {
+                            learnedMode = mode;
+                            learnedKeySize = key.length;
+                            learnedIv = ivLength;
                             return new Result(plain, mode + ";key=" + key.length + ";iv=" + ivLength);
                         }
                     }
+                }
+            }
+        }
+        return null;
+    }
+
+    /** Replays the combination that worked last time; one Crypto call instead of a sweep. */
+    private static Result attemptLearned(byte[] body, List<String> candidates) {
+        String mode = learnedMode;
+        if (mode == null) return null;
+        for (String candidate : candidates) {
+            for (byte[] key : keyForms(candidate)) {
+                if (key.length != learnedKeySize) continue;
+                byte[] plain = decrypt(body, key, mode, learnedIv);
+                if (plain != null && looksLikeImage(plain)) {
+                    return new Result(plain, mode + ";key=" + key.length + ";iv=" + learnedIv + ";cached");
                 }
             }
         }
@@ -152,7 +178,7 @@ final class ImageCrypto {
     }
 
     private static void collect(Object node, Set<String> out, int depth) {
-        if (node == null || depth > 6 || out.size() >= 24) return;
+        if (node == null || depth > 6 || out.size() >= 12) return;
         if (node instanceof org.json.JSONObject) {
             java.util.Iterator<String> names = ((org.json.JSONObject) node).keys();
             while (names.hasNext()) collect(((org.json.JSONObject) node).opt(names.next()), out, depth + 1);

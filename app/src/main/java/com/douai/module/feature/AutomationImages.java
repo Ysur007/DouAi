@@ -200,15 +200,15 @@ public final class AutomationImages {
 
     private static ChatImage fetch(String source, List<String> keyCandidates,
                                    MediaReadCancellation cancellation) throws Exception {
-        ChatImage bridged = HostImageBridge.load(source, cancellation);
-        if (bridged != null) return bridged;
         String current = source;
         for (int redirect = 0; redirect < 2; redirect++) {
             cancellation.check();
             if (!isMediaUrl(current)) throw new IllegalArgumentException("图片地址不受支持（仅允许公网 http/https）");
+            long httpStart = SystemClock.elapsedRealtime();
             HttpURLConnection connection = cancellation.open(URI.create(current));
             int status = -1;
             byte[] body = null;
+            long cryptoMillis = 0;
             try {
                 cancellation.check();
                 connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/120.0 Mobile Safari/537.36");
@@ -227,7 +227,9 @@ public final class AutomationImages {
                 }
                 byte[] data = isGzip(body) ? gunzip(body) : body;
                 if (!ImageCrypto.looksLikeImage(data)) {
+                    long cryptoStart = SystemClock.elapsedRealtime();
                     ImageCrypto.Result decrypted = ImageCrypto.attempt(data, keyCandidates);
+                    cryptoMillis = SystemClock.elapsedRealtime() - cryptoStart;
                     if (decrypted != null) {
                         DouAiLog.event("auto_reply", "image_crypto", "decrypted", decrypted.label);
                         data = decrypted.data;
@@ -238,8 +240,9 @@ public final class AutomationImages {
                 }
                 ChatImage image = ChatImageLoader.decode(data, cancellation);
                 cancellation.check();
-                DouAiLog.event("auto_reply", "image_fetch", "ok",
-                        "host=" + hostOf(current) + ";bytes=" + image.sizeBytes() + ";magic=" + magic(body));
+                DouAiLog.event("auto_reply", "image_timing", "fetch",
+                        "http_ms=" + (SystemClock.elapsedRealtime() - httpStart) + ";crypto_ms=" + cryptoMillis
+                                + ";host=" + hostOf(current) + ";bytes=" + image.sizeBytes());
                 return image;
             } catch (Exception failure) {
                 cancellation.check();
