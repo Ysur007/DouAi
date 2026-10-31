@@ -84,10 +84,35 @@ public final class ReplyPolicy {
     }
 
     private static String shareLabel(JSONObject content) {
-        String name = content.optString("content_name", "").trim();
-        if (name.isEmpty()) name = content.optString("title", "").trim();
-        return name.isEmpty() ? "[对方分享了一个视频]" : "[对方分享了一个视频：《" + clip(name) + "》]";
+        // content_name is the author nickname, not the title; the caption lives in another field.
+        String author = content.optString("content_name", "").trim();
+        String title = firstText(content, "title", "desc", "content_desc", "share_desc", "aweme_desc",
+                "content_title", "sub_title", "subtitle");
+        if (!shareSampled) {
+            shareSampled = true;
+            StringBuilder keys = new StringBuilder();
+            java.util.Iterator<String> names = content.keys();
+            while (names.hasNext()) {
+                if (keys.length() > 0) keys.append(',');
+                keys.append(names.next());
+            }
+            DouAiLog.event("auto_reply", "content_probe", "share_keys", keys.toString());
+        }
+        StringBuilder label = new StringBuilder("[对方分享了一个视频");
+        if (!title.isEmpty()) label.append("：《").append(clip(title)).append("》");
+        if (!author.isEmpty()) label.append("，作者：").append(clip(author));
+        return label.append("]").toString();
     }
+
+    private static String firstText(JSONObject content, String... names) {
+        for (String name : names) {
+            String value = content.optString(name, "").trim();
+            if (!value.isEmpty()) return value;
+        }
+        return "";
+    }
+
+    private static volatile boolean shareSampled;
 
     private static String clip(String value) {
         if (value == null) return "";
