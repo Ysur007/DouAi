@@ -21,7 +21,9 @@ public final class AutomationImages {
     /** Upper bound for the encrypted-CDN fallback so text replies are never queued behind it. */
     private static final long MEDIA_BUDGET_MILLIS = 12_000;
     /** Concurrent candidate fetches; the signed hosts differ widely in first-byte latency. */
-    private static final int MAX_PARALLEL_SOURCES = 4;
+    private static final int MAX_PARALLEL_SOURCES = 6;
+    /** Extra window after the first variant lands, so a larger copy can still be chosen. */
+    private static final long RACE_GRACE_MILLIS = 2_500;
 
     private AutomationImages() { }
 
@@ -193,23 +195,39 @@ public final class AutomationImages {
                 return fetch(source, keyCandidates, own);
             });
             Exception last = null;
-            ChatImage winner = null;
-            for (int i = 0; i < candidates.size() && winner == null; i++) {
+            List<ChatImage> finished = new ArrayList<>();
+            long graceDeadline = 0;
+            for (int i = 0; i < candidates.size(); i++) {
+                long wait = graceDeadline == 0
+                        ? MEDIA_BUDGET_MILLIS
+                        : Math.max(1, graceDeadline - SystemClock.elapsedRealtime());
                 java.util.concurrent.Future<ChatImage> done;
                 try {
-                    done = racers.poll(MEDIA_BUDGET_MILLIS, java.util.concurrent.TimeUnit.MILLISECONDS);
+                    done = racers.poll(wait, java.util.concurrent.TimeUnit.MILLISECONDS);
                 } catch (InterruptedException interrupted) {
                     Thread.currentThread().interrupt();
                     throw new java.util.concurrent.CancellationException("媒体处理已取消");
                 }
                 if (done == null) break;
-                try { winner = done.get(); }
+                if (graceDeadline == 0) {
+                    // One variant answered; give the rest a short window so a full-size copy can win.
+                    graceDeadline = SystemClock.elapsedRealtime() + RACE_GRACE_MILLIS;
+                }
+                try { finished.add(done.get()); }
                 catch (java.util.concurrent.ExecutionException failure) { last = (Exception) failure.getCause(); }
+                if (SystemClock.elapsedRealtime() >= graceDeadline) break;
             }
-            if (winner == null) {
+            if (finished.isEmpty()) {
                 if (last != null) throw last;
                 throw new IllegalStateException("图片下载超时");
             }
+            // Variants differ in resolution: the message lists thumbnails as well as the original.
+            ChatImage winner = finished.get(0);
+            for (ChatImage candidate : finished) {
+                if (candidate.sizeBytes() > winner.sizeBytes()) winner = candidate;
+            }
+            DouAiLog.event("auto_reply", "image_source", "race_result",
+                    "variants=" + finished.size() + ";picked=" + winner.sizeBytes());
             List<ChatImage> images = new ArrayList<>();
             images.add(winner);
             return images;
