@@ -406,7 +406,8 @@ public final class ChatCompletionClient {
         try {
             ensureActive(request);
             diagnostic(config, secondaryPrompt, prior.size(), "prepare", 0);
-            JSONObject body = requestBody(config, prior, withDocument(prompt, document), images, secondaryPrompt);
+            JSONObject body = requestBody(config, prior, withDocument(prompt, document), images, secondaryPrompt,
+                    com.douai.module.config.ConversationMemory.prefix(conversation));
             connection = (HttpURLConnection) new URL(url).openConnection();
             synchronized (requestLock) {
                 request.connection = connection;
@@ -685,8 +686,12 @@ public final class ChatCompletionClient {
     }
 
     private static JSONObject requestBody(AiModelConfig config, List<HistoryTurn> prior, String prompt,
-                                          List<ChatImage> images, String secondaryPrompt) throws Exception {
+                                          List<ChatImage> images, String secondaryPrompt,
+                                          String memoryPrefix) throws Exception {
         String systemPrompt = config.systemPrompt;
+        if (memoryPrefix != null && !memoryPrefix.isEmpty()) {
+            systemPrompt = systemPrompt + "\n\n[更早的对话背景] " + memoryPrefix;
+        }
         String currentPrompt = taskPrompt(prompt, secondaryPrompt);
         JSONObject body = new JSONObject().put("model", config.modelName);
         JSONObject parameters = config.parameters();

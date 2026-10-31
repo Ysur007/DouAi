@@ -529,6 +529,7 @@ public final class NativeMessagingHooks implements AutoCloseable {
     private void installReceive(XposedInterface framework, HostScanReport report, ClassLoader loader) {
         try {
             HostImageBridge.install(loader, framework);
+            com.douai.module.config.ConversationMemory.init(context);
             sdkUid = HostTargets.method(report, "adv_im_uid", loader);
             sdkBean = HostTargets.method(report, "adv_im_bean", loader);
             sdkConversations = HostTargets.method(report, "adv_im_conversations", loader);
@@ -839,6 +840,11 @@ public final class NativeMessagingHooks implements AutoCloseable {
             if (!operation.current()) return;
             if (!replyStillAllowed(values, account, current)) return;
             if (response == null || response.trim().isEmpty()) { operation.trace.stage("generation_empty", "usable_output=false"); return; }
+            // Long-term memory: a background note is rewritten every few turns and reused later.
+            try {
+                com.douai.module.config.ConversationMemory.record(
+                        "reply:" + account + ":" + conversation, text, response, models);
+            } catch (Throwable ignored) { }
             SpeechPreparation.Audio audio;
             if (current.enabled("reply_voice")) {
                 if (audioSender == null) throw new IllegalStateException("Native audio sender unavailable");
