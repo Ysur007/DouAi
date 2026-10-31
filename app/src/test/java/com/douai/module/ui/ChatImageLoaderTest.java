@@ -58,8 +58,12 @@ public final class ChatImageLoaderTest {
         catch (IllegalArgumentException expected) { assertTrue(expected.getMessage().contains("格式")); }
         try { ChatImageLoader.decode(new byte[0]); fail(); }
         catch (IllegalArgumentException expected) { assertTrue(expected.getMessage().contains("为空")); }
-        try { ChatImageLoader.read(new ByteArrayInputStream(new byte[16 * 1024 * 1024 + 1])); fail(); }
-        catch (IllegalArgumentException expected) { assertTrue(expected.getMessage().contains("16 MB")); }
+        try {
+            ChatImageLoader.read(new ByteArrayInputStream(new byte[ChatImageLoader.MAX_SOURCE_BYTES + 1]));
+            fail();
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("64 MB"));
+        }
     }
 
     @Test public void everyExifOrientationPreservesImageBoundsAndCornerColors() throws Exception {

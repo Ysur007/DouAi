@@ -145,7 +145,7 @@ public final class ChatMediaLoader {
     }
 
     public static Document loadDocument(Context context, Uri uri) throws Exception {
-        return loadDocument(context, uri, ChatCompletionClient.MAX_IMAGES_PER_MESSAGE);
+        return loadDocument(context, uri, ChatCompletionClient.MAX_DOCUMENT_PAGES);
     }
 
     public static Document loadDocument(Context context, Uri uri, int maxImages) throws Exception {
@@ -369,19 +369,19 @@ public final class ChatMediaLoader {
     }
 
     private static void validateFrames(int maxFrames) {
-        if (maxFrames < 1 || maxFrames > ChatCompletionClient.MAX_IMAGES_PER_MESSAGE) {
-            throw new IllegalArgumentException("视频画面数量应为 1 至 4");
+        if (maxFrames < 1 || maxFrames > ChatCompletionClient.MAX_VIDEO_FRAMES) {
+            throw new IllegalArgumentException("视频画面数量应为 1 至 " + ChatCompletionClient.MAX_VIDEO_FRAMES);
         }
     }
 
     private static void validateImageBudget(int maxImages) {
         if (maxImages < 0 || maxImages > ChatCompletionClient.MAX_IMAGES_PER_MESSAGE) {
-            throw new IllegalArgumentException("附件画面数量应为 0 至 4");
+            throw new IllegalArgumentException("附件画面数量应为 0 至 " + ChatCompletionClient.MAX_IMAGES_PER_MESSAGE);
         }
     }
 
     private static void requireImageBudget(int maxImages) {
-        if (maxImages == 0) throw new IllegalArgumentException("每条消息最多包含 4 张图片、PDF 页面或视频帧");
+        if (maxImages == 0) throw new IllegalArgumentException("每条消息最多包含 " + ChatCompletionClient.MAX_IMAGES_PER_MESSAGE + " 张图片、PDF 页面或视频帧");
     }
 
     static void validateLocalUri(Uri uri) {

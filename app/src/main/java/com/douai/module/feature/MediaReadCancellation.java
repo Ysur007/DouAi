@@ -10,7 +10,7 @@ import java.util.function.LongSupplier;
 /** Cancellation and deadline state for one automatic-comment media read. */
 final class MediaReadCancellation {
     interface ConnectionFactory { HttpURLConnection open(URI uri) throws Exception; }
-    private static final long DEFAULT_TIMEOUT_MILLIS = 60_000;
+    private static final long DEFAULT_TIMEOUT_MILLIS = 180_000;
     private final long timeoutNanos;
     private final LongSupplier clock;
     private final ConnectionFactory connections;
@@ -45,7 +45,7 @@ final class MediaReadCancellation {
     }
 
     void check() throws Exception {
-        if (timedOut) throw new TimeoutException("媒体读取超过 60 秒");
+        if (timedOut) throw new TimeoutException("媒体读取超时");
         if (Thread.currentThread().isInterrupted()) {
             cancel();
             throw new CancellationException("媒体读取已取消");
@@ -55,7 +55,7 @@ final class MediaReadCancellation {
         if (deadline != 0 && clock.getAsLong() - deadline >= 0) {
             timedOut = true;
             cancel();
-            throw new TimeoutException("媒体读取超过 60 秒");
+            throw new TimeoutException("媒体读取超时");
         }
     }
 
@@ -66,7 +66,7 @@ final class MediaReadCancellation {
         long remaining = deadline - clock.getAsLong();
         if (remaining <= 0) {
             check();
-            throw new TimeoutException("媒体读取超过 60 秒");
+            throw new TimeoutException("媒体读取超时");
         }
         return (int) Math.min(maximumMillis, Math.max(1, (remaining + 999_999L) / 1_000_000L));
     }

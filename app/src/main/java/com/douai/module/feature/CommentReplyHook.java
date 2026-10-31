@@ -608,9 +608,10 @@ public final class CommentReplyHook implements Application.ActivityLifecycleCall
             case "视频封面地址无法读取": return "work_cover_unavailable";
             case "对方评论附图没有可读取的地址": return "comment_image_missing";
             case "对方评论附图地址不受支持": return "comment_image_unsupported";
-            case "图片地址不属于受支持的抖音媒体域名": return "image_host_unsupported";
+            case "图片地址不属于受支持的抖音媒体域名":
+            case "图片地址不受支持（仅允许公网 http/https）": return "image_host_unsupported";
             case "图片下载失败": return "image_download_failed";
-            case "图片超过 16 MB": return "image_size_limit";
+            case "图片超过 64 MB": return "image_size_limit";
             case "Comment reply output is too long": return "output_limit";
             case "请先添加并启用模型配置":
             case "请先选择模型配置": return "model_unselected";

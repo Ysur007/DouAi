@@ -17,7 +17,8 @@ import java.io.InputStream;
 
 /** Reads only the selected document, normalizing size and orientation for inline model input. */
 public final class ChatImageLoader {
-    private static final int MAX_SOURCE_BYTES = 16 * 1024 * 1024;
+    /** Raised from 16 MB to 64 MB. Package-private so URL loading uses the same ceiling. */
+    public static final int MAX_SOURCE_BYTES = 64 * 1024 * 1024;
     private static final int MAX_EDGE = 2048;
 
     private ChatImageLoader() { }
@@ -40,7 +41,7 @@ public final class ChatImageLoader {
         int count;
         while ((count = stream.read(buffer)) != -1) {
             ChatMediaLoader.checkCancelled(cancellation);
-            if (bytes.size() + count > MAX_SOURCE_BYTES) throw new IllegalArgumentException("原始图片不能超过 16 MB");
+            if (bytes.size() + count > MAX_SOURCE_BYTES) throw new IllegalArgumentException("原始图片不能超过 " + (MAX_SOURCE_BYTES / (1024 * 1024)) + " MB");
             bytes.write(buffer, 0, count);
         }
         ChatMediaLoader.checkCancelled(cancellation);
@@ -54,7 +55,7 @@ public final class ChatImageLoader {
     static ChatImage decode(byte[] source, MediaReadCancellation cancellation) throws Exception {
         ChatMediaLoader.checkCancelled(cancellation);
         if (source == null || source.length == 0 || source.length > MAX_SOURCE_BYTES) {
-            throw new IllegalArgumentException("图片为空或超过 16 MB");
+            throw new IllegalArgumentException("图片为空或超过 " + (MAX_SOURCE_BYTES / (1024 * 1024)) + " MB");
         }
         BitmapFactory.Options options = new BitmapFactory.Options();
         options.inJustDecodeBounds = true;
@@ -89,9 +90,9 @@ public final class ChatImageLoader {
                 canvas.drawBitmap(decoded, orientation, new Paint(Paint.FILTER_BITMAP_FLAG));
                 ChatMediaLoader.checkCancelled(cancellation);
                 ByteArrayOutputStream jpeg = new ByteArrayOutputStream();
-                if (!opaque.compress(Bitmap.CompressFormat.JPEG, 85, jpeg)) throw new IllegalStateException("图片转换失败");
+                if (!opaque.compress(Bitmap.CompressFormat.JPEG, 90, jpeg)) throw new IllegalStateException("图片转换失败");
                 ChatMediaLoader.checkCancelled(cancellation);
-                if (jpeg.size() > ChatImage.MAX_BYTES) throw new IllegalArgumentException("转换后的图片超过 4 MB，请选择较小图片");
+                if (jpeg.size() > ChatImage.MAX_BYTES) throw new IllegalArgumentException("转换后的图片超过 " + (ChatImage.MAX_BYTES / (1024 * 1024)) + " MB，请选择较小图片");
                 return new ChatImage("image/jpeg", jpeg.toByteArray());
             } finally {
                 if (opaque != null) opaque.recycle();

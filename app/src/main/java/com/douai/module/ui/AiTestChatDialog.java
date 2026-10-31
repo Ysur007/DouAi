@@ -681,7 +681,7 @@ final class AiTestChatDialog extends Dialog {
             }
             int budget = Math.max(0, remaining - reserve);
             if (attachment.needsImages() && budget == 0)
-                throw new IllegalArgumentException("每条消息最多包含 4 张图片或视频抽样画面，请减少附件");
+                throw new IllegalArgumentException("每条消息最多包含 " + ChatCompletionClient.MAX_IMAGES_PER_MESSAGE + " 张图片或视频抽样画面，请减少附件");
             LoadedMedia media = attachment.prepared;
             // A restored draft can gain another image after a provider failure.
             // Re-read only when the cached sampling no longer fits its new budget.
@@ -701,7 +701,7 @@ final class AiTestChatDialog extends Dialog {
             turn.checkStopped();
             if (media == null) throw new IllegalArgumentException("附件读取结果为空");
             if (media.images.size() > budget)
-                throw new IllegalArgumentException("每条消息最多包含 4 张图片或视频抽样画面，请减少附件");
+                throw new IllegalArgumentException("每条消息最多包含 " + ChatCompletionClient.MAX_IMAGES_PER_MESSAGE + " 张图片或视频抽样画面，请减少附件");
             turn.preparedImages.addAll(media.images);
             if (media.text != null && !media.text.isEmpty()) {
                 if (turn.preparedDocuments.size() >= 4)
@@ -1058,7 +1058,7 @@ final class AiTestChatDialog extends Dialog {
     void addAttachment(String name, String text, List<ChatImage> images) {
         if (disposed || busy) return;
         if (draftImages.size() + images.size() > ChatCompletionClient.MAX_IMAGES_PER_MESSAGE)
-            throw new IllegalArgumentException("每条消息最多包含 4 张图片或视频帧");
+            throw new IllegalArgumentException("每条消息最多包含 " + ChatCompletionClient.MAX_IMAGES_PER_MESSAGE + " 张图片或视频帧");
         if (!text.isEmpty() && draftDocuments.size() >= 4)
             throw new IllegalArgumentException("每条消息最多添加 4 个文件或视频说明");
         if (!text.isEmpty()) {

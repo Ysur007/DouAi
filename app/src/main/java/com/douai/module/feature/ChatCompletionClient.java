@@ -41,8 +41,13 @@ public final class ChatCompletionClient {
     private static final int MAX_STRUCTURED_REPLY_CHARS = MAX_REPLY_CHARS + 32;
     private static final ThreadPoolExecutor STREAM_IO = ioWorkers();
     private static final ThreadPoolExecutor STREAM_CLEANUP = cleanupWorkers();
-    public static final int MAX_IMAGES_PER_MESSAGE = 4;
-    private static final int MAX_HISTORY_IMAGE_BYTES = 12 * 1024 * 1024;
+    /** Upper bound for inline images in one request. Raised from 4 to 12. */
+    public static final int MAX_IMAGES_PER_MESSAGE = 12;
+    /** Physical document pages stay at the previous budget so PDF behaviour does not change. */
+    public static final int MAX_DOCUMENT_PAGES = 4;
+    /** Video sampling stays at the previous budget so frame count does not follow the image limit. */
+    public static final int MAX_VIDEO_FRAMES = 3;
+    private static final int MAX_HISTORY_IMAGE_BYTES = 48 * 1024 * 1024;
     private final Map<String, ArrayDeque<HistoryTurn>> history = new LinkedHashMap<>();
     private final ArrayDeque<HistoryTurn> historyOrder = new ArrayDeque<>();
     private final Map<HistoryTurn, HistoryImageBudget.Ticket> historyImageTickets = new IdentityHashMap<>();
@@ -146,7 +151,7 @@ public final class ChatCompletionClient {
         AiModelConfig config = settings.selected();
         String secondary = secondaryPrompt == null ? "" : secondaryPrompt;
         List<ChatImage> attachments = images == null ? Collections.emptyList() : new ArrayList<>(images);
-        if (attachments.size() > MAX_IMAGES_PER_MESSAGE) throw new IllegalArgumentException("每条消息最多 4 张图片");
+        if (attachments.size() > MAX_IMAGES_PER_MESSAGE) throw new IllegalArgumentException("每条消息最多 " + MAX_IMAGES_PER_MESSAGE + " 张图片");
         for (ChatImage image : attachments) {
             if (image == null) throw new IllegalArgumentException("图片内容为空");
         }

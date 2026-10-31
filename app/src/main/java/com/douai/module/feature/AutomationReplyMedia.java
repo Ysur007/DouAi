@@ -99,7 +99,7 @@ public final class AutomationReplyMedia {
         if (video) {
             File local = AutomationCommentMedia.downloadVideo(context, videoUrl, cancellation);
             try { result.addAll(ChatMediaLoader.loadVideoFile(local,
-                    ChatCompletionClient.MAX_IMAGES_PER_MESSAGE - result.size(), cancellation)); }
+                    ChatCompletionClient.MAX_VIDEO_FRAMES, cancellation)); }
             finally { ChatMediaLoader.deleteTemporary(local); }
         }
         cancellation.check();
