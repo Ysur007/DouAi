@@ -128,11 +128,11 @@ public final class AutomationImages {
     public static String shape(JSONObject content) {
         StringBuilder out = new StringBuilder();
         shape(content, "", out, 0);
-        return out.length() > 900 ? out.substring(0, 900) : out.toString();
+        return out.length() > 1600 ? out.substring(0, 1600) : out.toString();
     }
 
     private static void shape(Object node, String path, StringBuilder out, int depth) {
-        if (node == null || depth > 3 || out.length() > 900) return;
+        if (node == null || depth > 6 || out.length() > 1600) return;
         if (node instanceof JSONObject) {
             java.util.Iterator<String> names = ((JSONObject) node).keys();
             while (names.hasNext()) {
@@ -170,6 +170,11 @@ public final class AutomationImages {
     }
 
     static List<ChatImage> load(List<String> urls, MediaReadCancellation cancellation) throws Exception {
+        return load(urls, Collections.<String>emptyList(), cancellation);
+    }
+
+    static List<ChatImage> load(List<String> urls, List<String> keyCandidates,
+                                MediaReadCancellation cancellation) throws Exception {
         cancellation.start();
         if (urls.size() > ChatCompletionClient.MAX_IMAGES_PER_MESSAGE) throw new IllegalArgumentException("图片最多 " + ChatCompletionClient.MAX_IMAGES_PER_MESSAGE + " 张");
         List<ChatImage> images = new ArrayList<>();
@@ -180,7 +185,7 @@ public final class AutomationImages {
             if (attempts++ >= 2) break;
             // Room for one bridge attempt plus one HTTP attempt; anything slower is not worth the queue.
             if (SystemClock.elapsedRealtime() - budgetStart > MEDIA_BUDGET_MILLIS) break;
-            try { images.add(fetch(source, cancellation)); }
+            try { images.add(fetch(source, keyCandidates, cancellation)); }
             catch (Exception failure) { last = failure; }
         }
         if (images.isEmpty() && last != null) throw last;
@@ -190,10 +195,11 @@ public final class AutomationImages {
     static ChatImage fetch(String source) throws Exception {
         MediaReadCancellation cancellation = new MediaReadCancellation();
         cancellation.start();
-        return fetch(source, cancellation);
+        return fetch(source, Collections.<String>emptyList(), cancellation);
     }
 
-    private static ChatImage fetch(String source, MediaReadCancellation cancellation) throws Exception {
+    private static ChatImage fetch(String source, List<String> keyCandidates,
+                                   MediaReadCancellation cancellation) throws Exception {
         ChatImage bridged = HostImageBridge.load(source, cancellation);
         if (bridged != null) return bridged;
         String current = source;
@@ -220,6 +226,16 @@ public final class AutomationImages {
                     body = ChatImageLoader.read(input, cancellation);
                 }
                 byte[] data = isGzip(body) ? gunzip(body) : body;
+                if (!ImageCrypto.looksLikeImage(data)) {
+                    ImageCrypto.Result decrypted = ImageCrypto.attempt(data, keyCandidates);
+                    if (decrypted != null) {
+                        DouAiLog.event("auto_reply", "image_crypto", "decrypted", decrypted.label);
+                        data = decrypted.data;
+                    } else {
+                        DouAiLog.event("auto_reply", "image_crypto", "no_match",
+                                "bytes=" + data.length + ";candidates=" + keyCandidates.size());
+                    }
+                }
                 ChatImage image = ChatImageLoader.decode(data, cancellation);
                 cancellation.check();
                 DouAiLog.event("auto_reply", "image_fetch", "ok",

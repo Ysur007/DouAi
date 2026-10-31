@@ -813,7 +813,7 @@ public final class NativeMessagingHooks implements AutoCloseable {
             operation.stageStarted = mediaStarted;
             List<ChatImage> images = models == null ? Collections.emptyList()
                     : AutomationReplyMedia.loadIncoming(context, incoming.imageUrls, incoming.videoUrl,
-                            incoming.inlinePayloads, current, operation.mediaCancellation);
+                            incoming.inlinePayloads, incoming.keyCandidates, current, operation.mediaCancellation);
             operation.mediaMillis = SystemClock.elapsedRealtime() - mediaStarted;
             if (!operation.current()) return;
             String secondary = current.text("reply_prompt", "自然简洁地回复对方，只输出回复正文。");

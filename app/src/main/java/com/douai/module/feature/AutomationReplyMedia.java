@@ -87,7 +87,7 @@ public final class AutomationReplyMedia {
 
     /** Loads verified explicit sources. IM encrypted payloads cannot supply videoUrl in this version. */
     static List<ChatImage> loadIncoming(Context context, List<String> urls, String videoUrl,
-                                       List<String> inlinePayloads, LocalOptions options,
+                                       List<String> inlinePayloads, List<String> keyCandidates, LocalOptions options,
                                        MediaReadCancellation cancellation) throws Exception {
         cancellation.start();
         cancellation.check();
@@ -99,7 +99,7 @@ public final class AutomationReplyMedia {
         int imageLimit = video ? 1 : ChatCompletionClient.MAX_IMAGES_PER_MESSAGE;
         List<ChatImage> result = new ArrayList<>(inline);
         if (!selected.isEmpty()) result.addAll(AutomationImages.load(
-                selected.subList(0, Math.min(imageLimit, selected.size())), cancellation));
+                selected.subList(0, Math.min(imageLimit, selected.size())), keyCandidates, cancellation));
         if (video) {
             File local = AutomationCommentMedia.downloadVideo(context, videoUrl, cancellation);
             try { result.addAll(ChatMediaLoader.loadVideoFile(local,

@@ -23,6 +23,7 @@ public final class ReplyPolicy {
         public final String text;
         public final java.util.List<String> imageUrls;
         public final java.util.List<String> inlinePayloads;
+        public final java.util.List<String> keyCandidates;
         public final String videoUrl;
         public final String author;
         public final boolean group;
@@ -33,17 +34,25 @@ public final class ReplyPolicy {
         }
         Incoming(String conversation, String serverId, long sender, String text, java.util.List<String> imageUrls,
                  String videoUrl, String author, boolean group, AutomationScopePolicy.Relation relation) {
-            this(conversation, serverId, sender, text, imageUrls, videoUrl, author, group, relation, java.util.Collections.emptyList());
+            this(conversation, serverId, sender, text, imageUrls, videoUrl, author, group, relation,
+                    java.util.Collections.emptyList(), java.util.Collections.emptyList());
         }
         Incoming(String conversation, String serverId, long sender, String text, java.util.List<String> imageUrls,
                  String videoUrl, String author, boolean group, AutomationScopePolicy.Relation relation,
                  java.util.List<String> inlinePayloads) {
+            this(conversation, serverId, sender, text, imageUrls, videoUrl, author, group, relation,
+                    inlinePayloads, java.util.Collections.emptyList());
+        }
+        Incoming(String conversation, String serverId, long sender, String text, java.util.List<String> imageUrls,
+                 String videoUrl, String author, boolean group, AutomationScopePolicy.Relation relation,
+                 java.util.List<String> inlinePayloads, java.util.List<String> keyCandidates) {
             this.conversation = conversation;
             this.serverId = serverId;
             this.sender = sender;
             this.text = text;
             this.imageUrls = imageUrls;
             this.inlinePayloads = inlinePayloads == null ? java.util.Collections.emptyList() : inlinePayloads;
+            this.keyCandidates = keyCandidates == null ? java.util.Collections.emptyList() : keyCandidates;
             this.videoUrl = videoUrl == null ? "" : videoUrl;
             this.author = author;
             this.group = group;
@@ -103,7 +112,9 @@ public final class ReplyPolicy {
                 if (!GroupReplyPolicy.allows(values, ownUid, conversation, sender, author, options)) return rejected("group_policy_rejected", "scope_mode=" + options.text("reply_group_scope_mode", "all") + ";trigger_mode=" + options.text("reply_group_mode", "all"));
             } else if (!ReplyScopePolicy.allows(options, uid, author, messageText,
                     content.optString("title", ""), relation)) return rejected("private_scope_or_content_rejected", "group=false");
-            return new Incoming(conversation, id, sender, text, images, video, author, group, relation, inline);
+            java.util.List<String> keys = recognize
+                    ? ImageCrypto.keyCandidates(content) : java.util.Collections.emptyList();
+            return new Incoming(conversation, id, sender, text, images, video, author, group, relation, inline, keys);
         } catch (org.json.JSONException | RuntimeException ignored) { DouAiLog.failure("auto_reply", "receipt_parse", ignored); return rejected("receipt_parse_failed", "error_type=" + ignored.getClass().getSimpleName()); }
     }
 
