@@ -25,6 +25,7 @@ public final class AutomationImages {
         if (result.isEmpty()) {
             DouAiLog.event("auto_reply", "image_payload", "no_media_url", "keys=" + keys(content));
         }
+        DouAiLog.event("auto_reply", "image_payload", "dump", flatten(content, "", new StringBuilder()));
         return Collections.unmodifiableList(new ArrayList<>(result));
     }
 
@@ -57,6 +58,34 @@ public final class AutomationImages {
                 if (out.size() >= ChatCompletionClient.MAX_IMAGES_PER_MESSAGE) return;
             }
         }
+    }
+
+    /** Compact "path=value" listing so an unknown schema can be read from one log line. */
+    private static String flatten(Object node, String path, StringBuilder out) {
+        if (node == null || out.length() > 1400) return trim(out);
+        if (node instanceof JSONObject) {
+            java.util.Iterator<String> names = ((JSONObject) node).keys();
+            while (names.hasNext()) {
+                String name = names.next();
+                flatten(((JSONObject) node).opt(name), path.isEmpty() ? name : path + "." + name, out);
+            }
+        } else if (node instanceof JSONArray) {
+            JSONArray array = (JSONArray) node;
+            for (int i = 0; i < array.length() && i < 4; i++) {
+                flatten(array.opt(i), path + "[" + i + "]", out);
+            }
+        } else {
+            String text = String.valueOf(node);
+            int cap = text.startsWith("http") ? 22 : 40;
+            if (text.length() > cap) text = text.substring(0, cap) + "~" + text.length();
+            if (out.length() > 0) out.append('|');
+            out.append(path).append('=').append(text);
+        }
+        return trim(out);
+    }
+
+    private static String trim(StringBuilder out) {
+        return out.length() > 1400 ? out.substring(0, 1400) : out.toString();
     }
 
     /** Key names only; payload values are never written to the log. */
