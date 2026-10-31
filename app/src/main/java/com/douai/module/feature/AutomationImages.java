@@ -20,6 +20,8 @@ import java.util.Set;
 public final class AutomationImages {
     /** Upper bound for the encrypted-CDN fallback so text replies are never queued behind it. */
     private static final long MEDIA_BUDGET_MILLIS = 12_000;
+    /** Concurrent candidate fetches; the signed hosts differ widely in first-byte latency. */
+    private static final int MAX_PARALLEL_SOURCES = 4;
 
     private AutomationImages() { }
 
@@ -177,19 +179,43 @@ public final class AutomationImages {
                                 MediaReadCancellation cancellation) throws Exception {
         cancellation.start();
         if (urls.size() > ChatCompletionClient.MAX_IMAGES_PER_MESSAGE) throw new IllegalArgumentException("图片最多 " + ChatCompletionClient.MAX_IMAGES_PER_MESSAGE + " 张");
-        List<ChatImage> images = new ArrayList<>();
-        Exception last = null;
-        int attempts = 0;
-        long budgetStart = android.os.SystemClock.elapsedRealtime();
-        for (String source : urls) {
-            if (attempts++ >= 2) break;
-            // Room for one bridge attempt plus one HTTP attempt; anything slower is not worth the queue.
-            if (SystemClock.elapsedRealtime() - budgetStart > MEDIA_BUDGET_MILLIS) break;
-            try { images.add(fetch(source, keyCandidates, cancellation)); }
-            catch (Exception failure) { last = failure; }
+        // Signed CDN edges vary in warmth: the same object can take 40s on one host and 200ms on
+        // another, so every candidate is started at once and the first complete image wins.
+        if (urls.isEmpty()) return new ArrayList<>();
+        List<String> candidates = urls.subList(0, Math.min(MAX_PARALLEL_SOURCES, urls.size()));
+        java.util.concurrent.ExecutorService pool =
+                java.util.concurrent.Executors.newFixedThreadPool(candidates.size());
+        java.util.concurrent.CompletionService<ChatImage> racers =
+                new java.util.concurrent.ExecutorCompletionService<>(pool);
+        try {
+            for (String source : candidates) racers.submit(() -> {
+                MediaReadCancellation own = new MediaReadCancellation();
+                return fetch(source, keyCandidates, own);
+            });
+            Exception last = null;
+            ChatImage winner = null;
+            for (int i = 0; i < candidates.size() && winner == null; i++) {
+                java.util.concurrent.Future<ChatImage> done;
+                try {
+                    done = racers.poll(MEDIA_BUDGET_MILLIS, java.util.concurrent.TimeUnit.MILLISECONDS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new java.util.concurrent.CancellationException("媒体处理已取消");
+                }
+                if (done == null) break;
+                try { winner = done.get(); }
+                catch (java.util.concurrent.ExecutionException failure) { last = (Exception) failure.getCause(); }
+            }
+            if (winner == null) {
+                if (last != null) throw last;
+                throw new IllegalStateException("图片下载超时");
+            }
+            List<ChatImage> images = new ArrayList<>();
+            images.add(winner);
+            return images;
+        } finally {
+            pool.shutdownNow();
         }
-        if (images.isEmpty() && last != null) throw last;
-        return images;
     }
 
     static ChatImage fetch(String source) throws Exception {
