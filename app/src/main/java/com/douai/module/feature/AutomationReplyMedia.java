@@ -86,15 +86,19 @@ public final class AutomationReplyMedia {
     static String incomingVideo(JSONObject content) { return null; }
 
     /** Loads verified explicit sources. IM encrypted payloads cannot supply videoUrl in this version. */
-    static List<ChatImage> loadIncoming(Context context, List<String> urls, String videoUrl, LocalOptions options,
+    static List<ChatImage> loadIncoming(Context context, List<String> urls, String videoUrl,
+                                       List<String> inlinePayloads, LocalOptions options,
                                        MediaReadCancellation cancellation) throws Exception {
         cancellation.start();
         cancellation.check();
         boolean images = options.enabled(RECOGNIZE_IMAGES, true);
         boolean video = options.enabled(RECOGNIZE_VIDEO, false) && videoUrl != null && !videoUrl.isEmpty();
-        List<String> selected = images && urls != null ? urls : Collections.emptyList();
+        // The embedded thumbnail is already decrypted by the sender, so it outranks CDN fetching.
+        List<ChatImage> inline = images ? AutomationImages.decodeInline(inlinePayloads) : Collections.emptyList();
+        List<String> selected = images && inline.isEmpty() && urls != null ? urls : Collections.emptyList();
         int imageLimit = video ? 1 : ChatCompletionClient.MAX_IMAGES_PER_MESSAGE;
-        List<ChatImage> result = new ArrayList<>(AutomationImages.load(
+        List<ChatImage> result = new ArrayList<>(inline);
+        if (!selected.isEmpty()) result.addAll(AutomationImages.load(
                 selected.subList(0, Math.min(imageLimit, selected.size())), cancellation));
         if (video) {
             File local = AutomationCommentMedia.downloadVideo(context, videoUrl, cancellation);

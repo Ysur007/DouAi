@@ -22,21 +22,28 @@ public final class ReplyPolicy {
         public final long sender;
         public final String text;
         public final java.util.List<String> imageUrls;
+        public final java.util.List<String> inlinePayloads;
         public final String videoUrl;
         public final String author;
         public final boolean group;
         public final AutomationScopePolicy.Relation relation;
         Incoming(String conversation, String serverId, long sender, String text, java.util.List<String> imageUrls,
                  String author, boolean group, AutomationScopePolicy.Relation relation) {
-            this(conversation, serverId, sender, text, imageUrls, "", author, group, relation);
+            this(conversation, serverId, sender, text, imageUrls, "", author, group, relation, java.util.Collections.emptyList());
         }
         Incoming(String conversation, String serverId, long sender, String text, java.util.List<String> imageUrls,
                  String videoUrl, String author, boolean group, AutomationScopePolicy.Relation relation) {
+            this(conversation, serverId, sender, text, imageUrls, videoUrl, author, group, relation, java.util.Collections.emptyList());
+        }
+        Incoming(String conversation, String serverId, long sender, String text, java.util.List<String> imageUrls,
+                 String videoUrl, String author, boolean group, AutomationScopePolicy.Relation relation,
+                 java.util.List<String> inlinePayloads) {
             this.conversation = conversation;
             this.serverId = serverId;
             this.sender = sender;
             this.text = text;
             this.imageUrls = imageUrls;
+            this.inlinePayloads = inlinePayloads == null ? java.util.Collections.emptyList() : inlinePayloads;
             this.videoUrl = videoUrl == null ? "" : videoUrl;
             this.author = author;
             this.group = group;
@@ -68,9 +75,12 @@ public final class ReplyPolicy {
             if (group && !options.enabled("reply_group_chats", false)) return rejected("group_replies_disabled", "group=true");
             if (!group && !options.enabled("reply_private_chats", true)) return rejected("private_replies_disabled", "group=false");
             JSONObject content = new JSONObject(values.getAsString("content"));
-            java.util.List<String> images = type == 27 && options.enabled(LocalOptions.REPLY_RECOGNIZE_IMAGES, true)
+            boolean recognize = type == 27 && options.enabled(LocalOptions.REPLY_RECOGNIZE_IMAGES, true);
+            java.util.List<String> images = recognize
                     ? AutomationReplyMedia.incomingImages(content) : java.util.Collections.emptyList();
-            if (type == 27 && options.enabled(LocalOptions.REPLY_RECOGNIZE_IMAGES, true) && images.isEmpty()) return rejected("image_source_missing", "type=27;recognize_images=true");
+            java.util.List<String> inline = recognize
+                    ? AutomationImages.inlinePayloads(content) : java.util.Collections.emptyList();
+            if (recognize && images.isEmpty() && inline.isEmpty()) return rejected("image_source_missing", "type=27;recognize_images=true");
             boolean videoMessage = AutomationReplyMedia.isVideoMessageType(type);
             String video = videoMessage
                     && options.enabled(LocalOptions.REPLY_RECOGNIZE_VIDEO, false)
@@ -80,9 +90,9 @@ public final class ReplyPolicy {
             if (video == null) video = "";
             String text = content.optString("text", "").trim();
             String messageText = text;
-            if (text.isEmpty() && !images.isEmpty()) text = "请根据对方发来的图片回复对方。";
+            if (text.isEmpty() && (!images.isEmpty() || !inline.isEmpty())) text = "请根据对方发来的图片回复对方。";
             if (text.isEmpty() && !video.isEmpty()) text = "请根据对方发来的视频画面回复对方。";
-            if (text.isEmpty()) return rejected("message_has_no_usable_content", "images=" + images.size() + ";video_present=" + !video.isEmpty());
+            if (text.isEmpty()) return rejected("message_has_no_usable_content", "images=" + (images.size() + inline.size()) + ";video_present=" + !video.isEmpty());
             String uid = sender.toString();
             AutomationScopePolicy.Relation relation = AutomationScopePolicy.fromIncoming(values, sender);
             String author = first(values, "sender_name", "nickname", "author_name", "user_name");
@@ -92,7 +102,7 @@ public final class ReplyPolicy {
                 if (!GroupReplyPolicy.allows(values, ownUid, conversation, sender, author, options)) return rejected("group_policy_rejected", "scope_mode=" + options.text("reply_group_scope_mode", "all") + ";trigger_mode=" + options.text("reply_group_mode", "all"));
             } else if (!ReplyScopePolicy.allows(options, uid, author, messageText,
                     content.optString("title", ""), relation)) return rejected("private_scope_or_content_rejected", "group=false");
-            return new Incoming(conversation, id, sender, text, images, video, author, group, relation);
+            return new Incoming(conversation, id, sender, text, images, video, author, group, relation, inline);
         } catch (org.json.JSONException | RuntimeException ignored) { DouAiLog.failure("auto_reply", "receipt_parse", ignored); return rejected("receipt_parse_failed", "error_type=" + ignored.getClass().getSimpleName()); }
     }
 

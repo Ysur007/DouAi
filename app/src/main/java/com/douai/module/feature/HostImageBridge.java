@@ -23,7 +23,7 @@ import io.github.libxposed.api.XposedInterface;
  * the host itself. The module never sees a key and never persists the image.
  */
 public final class HostImageBridge {
-    private static final int TIMEOUT_SECONDS = 15;
+    private static final int TIMEOUT_SECONDS = 4;
     private static final int MAX_EDGE = 2048;
     private static volatile HostImageBridge instance;
     private static volatile ClassLoader hostLoader;

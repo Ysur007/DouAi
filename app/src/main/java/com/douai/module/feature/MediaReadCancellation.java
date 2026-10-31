@@ -10,7 +10,7 @@ import java.util.function.LongSupplier;
 /** Cancellation and deadline state for one automatic-comment media read. */
 final class MediaReadCancellation {
     interface ConnectionFactory { HttpURLConnection open(URI uri) throws Exception; }
-    private static final long DEFAULT_TIMEOUT_MILLIS = 180_000;
+    private static final long DEFAULT_TIMEOUT_MILLIS = 60_000;
     private final long timeoutNanos;
     private final LongSupplier clock;
     private final ConnectionFactory connections;

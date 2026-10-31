@@ -29,6 +29,63 @@ public final class AutomationImages {
         return Collections.unmodifiableList(new ArrayList<>(result));
     }
 
+    /**
+     * Some IM payloads embed the thumbnail itself as base64 (inline_pic). Scanning for those
+     * strings is cheap enough to run on the receipt thread; decoding happens on the worker.
+     */
+    public static List<String> inlinePayloads(JSONObject content) {
+        List<String> out = new ArrayList<>();
+        if (content == null) return out;
+        collectBase64(content, out, 0);
+        return out;
+    }
+
+    private static void collectBase64(Object node, List<String> out, int depth) {
+        if (node == null || depth > 6 || out.size() >= 4) return;
+        if (node instanceof JSONObject) {
+            java.util.Iterator<String> names = ((JSONObject) node).keys();
+            while (names.hasNext()) collectBase64(((JSONObject) node).opt(names.next()), out, depth + 1);
+        } else if (node instanceof JSONArray) {
+            JSONArray array = (JSONArray) node;
+            for (int i = 0; i < array.length(); i++) collectBase64(array.opt(i), out, depth + 1);
+        } else if (node instanceof String) {
+            String text = (String) node;
+            // Base64 of a real thumbnail is far longer than any identifier and never starts with http.
+            if (text.length() >= 400 && text.length() <= 4_000_000 && !text.startsWith("http")) out.add(text);
+        }
+    }
+
+    /** Decodes inline payloads into request-ready JPEGs; needs no network and no CDN key. */
+    public static List<ChatImage> decodeInline(List<String> payloads) {
+        List<ChatImage> images = new ArrayList<>();
+        if (payloads == null) return images;
+        for (String payload : payloads) {
+            try {
+                byte[] data = android.util.Base64.decode(payload, android.util.Base64.DEFAULT);
+                if (!looksLikeImage(data)) continue;
+                MediaReadCancellation cancellation = new MediaReadCancellation();
+                cancellation.start();
+                images.add(ChatImageLoader.decode(data, cancellation));
+                DouAiLog.event("auto_reply", "image_inline", "decoded", "bytes=" + data.length);
+            } catch (Throwable failure) {
+                DouAiLog.event("auto_reply", "image_inline", "skipped",
+                        "error=" + failure.getClass().getSimpleName());
+            }
+            if (images.size() >= ChatCompletionClient.MAX_IMAGES_PER_MESSAGE) break;
+        }
+        return images;
+    }
+
+    private static boolean looksLikeImage(byte[] data) {
+        if (data == null || data.length < 12) return false;
+        int b0 = data[0] & 0xFF, b1 = data[1] & 0xFF;
+        if (b0 == 0xFF && b1 == 0xD8) return true;                       // JPEG
+        if (b0 == 0x89 && b1 == 0x50) return true;                       // PNG
+        if (b0 == 'G' && b1 == 'I') return true;                         // GIF
+        if (b0 == 'B' && b1 == 'M') return true;                         // BMP
+        return b0 == 'R' && b1 == 'I' && data[8] == 'W' && data[9] == 'E'; // RIFF/WEBP
+    }
+
     /** Walks the payload instead of trusting one field name; the host schema changes between builds. */
     private static void collect(Object node, Set<String> out, int depth) {
         if (node == null || depth > 6 || out.size() >= ChatCompletionClient.MAX_IMAGES_PER_MESSAGE) return;
@@ -110,7 +167,9 @@ public final class AutomationImages {
         if (urls.size() > ChatCompletionClient.MAX_IMAGES_PER_MESSAGE) throw new IllegalArgumentException("图片最多 " + ChatCompletionClient.MAX_IMAGES_PER_MESSAGE + " 张");
         List<ChatImage> images = new ArrayList<>();
         Exception last = null;
+        int attempts = 0;
         for (String source : urls) {
+            if (attempts++ >= 2) break;
             try { images.add(fetch(source, cancellation)); }
             catch (Exception failure) { last = failure; }
         }
