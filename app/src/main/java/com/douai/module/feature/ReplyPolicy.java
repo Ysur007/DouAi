@@ -60,6 +60,20 @@ public final class ReplyPolicy {
         }
     }
 
+    private static final java.util.Set<Integer> PROBED_TYPES =
+            java.util.Collections.synchronizedSet(new java.util.HashSet<Integer>());
+
+    /** One shape sample per unknown type, so a sticker payload can be mapped without guessing. */
+    private static void probeUnsupportedType(Integer type, ContentValues values) {
+        if (type == null || !PROBED_TYPES.add(type)) return;
+        try {
+            DouAiLog.event("auto_reply", "content_probe", "type_" + type,
+                    AutomationImages.shape(new JSONObject(values.getAsString("content"))));
+        } catch (Throwable failure) {
+            DouAiLog.event("auto_reply", "content_probe", "failed", "type=" + type);
+        }
+    }
+
     public static Incoming incoming(ContentValues values, long ownUid, long startedAt, LocalOptions options) {
         if (values == null || ownUid <= 0
                 || !options.enabled("native_auto_reply")) return rejected("disabled_or_account_missing", "values_present=" + (values != null) + ";account_present=" + (ownUid > 0));
@@ -79,6 +93,7 @@ public final class ReplyPolicy {
                     : type != 7 && !(ai && (type == 27 || AutomationReplyMedia.isVideoMessageType(type))) ? "message_type_unsupported_in_mode"
                     : conversationType != null && conversationType != 1 && conversationType != 2 ? "conversation_type_unsupported"
                     : created == null ? "timestamp_missing" : created < startedAt - 30_000 ? "historical_message" : "";
+            if ("message_type_unsupported_in_mode".equals(rejected)) probeUnsupportedType(type, values);
             if (!rejected.isEmpty()) return rejected(rejected, "type=" + type + ";conversation_type=" + conversationType + ";ai_mode=" + ai);
             boolean group = conversationType != null && conversationType == 2;
             if (group && !options.enabled("reply_group_chats", false)) return rejected("group_replies_disabled", "group=true");
