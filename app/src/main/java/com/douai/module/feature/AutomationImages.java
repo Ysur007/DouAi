@@ -1,5 +1,7 @@
 package com.douai.module.feature;
 
+import android.os.SystemClock;
+
 import com.douai.module.diagnostics.DouAiLog;
 
 import org.json.JSONArray;
@@ -16,6 +18,9 @@ import java.util.Set;
 
 /** Fetches explicit media URLs from host image models without forwarding model credentials. */
 public final class AutomationImages {
+    /** Upper bound for the encrypted-CDN fallback so text replies are never queued behind it. */
+    private static final long MEDIA_BUDGET_MILLIS = 12_000;
+
     private AutomationImages() { }
 
     public static List<String> incoming(JSONObject content) {
@@ -25,7 +30,6 @@ public final class AutomationImages {
         if (result.isEmpty()) {
             DouAiLog.event("auto_reply", "image_payload", "no_media_url", "keys=" + keys(content));
         }
-        DouAiLog.event("auto_reply", "image_payload", "dump", flatten(content, "", new StringBuilder()));
         return Collections.unmodifiableList(new ArrayList<>(result));
     }
 
@@ -117,34 +121,6 @@ public final class AutomationImages {
         }
     }
 
-    /** Compact "path=value" listing so an unknown schema can be read from one log line. */
-    private static String flatten(Object node, String path, StringBuilder out) {
-        if (node == null || out.length() > 1400) return trim(out);
-        if (node instanceof JSONObject) {
-            java.util.Iterator<String> names = ((JSONObject) node).keys();
-            while (names.hasNext()) {
-                String name = names.next();
-                flatten(((JSONObject) node).opt(name), path.isEmpty() ? name : path + "." + name, out);
-            }
-        } else if (node instanceof JSONArray) {
-            JSONArray array = (JSONArray) node;
-            for (int i = 0; i < array.length() && i < 4; i++) {
-                flatten(array.opt(i), path + "[" + i + "]", out);
-            }
-        } else {
-            String text = String.valueOf(node);
-            int cap = text.startsWith("http") ? 22 : 40;
-            if (text.length() > cap) text = text.substring(0, cap) + "~" + text.length();
-            if (out.length() > 0) out.append('|');
-            out.append(path).append('=').append(text);
-        }
-        return trim(out);
-    }
-
-    private static String trim(StringBuilder out) {
-        return out.length() > 1400 ? out.substring(0, 1400) : out.toString();
-    }
-
     /** Key names only; payload values are never written to the log. */
     private static String keys(JSONObject content) {
         StringBuilder text = new StringBuilder();
@@ -168,8 +144,11 @@ public final class AutomationImages {
         List<ChatImage> images = new ArrayList<>();
         Exception last = null;
         int attempts = 0;
+        long budgetStart = android.os.SystemClock.elapsedRealtime();
         for (String source : urls) {
             if (attempts++ >= 2) break;
+            // Room for one bridge attempt plus one HTTP attempt; anything slower is not worth the queue.
+            if (SystemClock.elapsedRealtime() - budgetStart > MEDIA_BUDGET_MILLIS) break;
             try { images.add(fetch(source, cancellation)); }
             catch (Exception failure) { last = failure; }
         }
@@ -187,7 +166,7 @@ public final class AutomationImages {
         ChatImage bridged = HostImageBridge.load(source, cancellation);
         if (bridged != null) return bridged;
         String current = source;
-        for (int redirect = 0; redirect < 4; redirect++) {
+        for (int redirect = 0; redirect < 2; redirect++) {
             cancellation.check();
             if (!isMediaUrl(current)) throw new IllegalArgumentException("图片地址不受支持（仅允许公网 http/https）");
             HttpURLConnection connection = cancellation.open(URI.create(current));
