@@ -61,8 +61,10 @@ public final class ChatImageLoader {
         options.inJustDecodeBounds = true;
         BitmapFactory.decodeByteArray(source, 0, source.length, options);
         ChatMediaLoader.checkCancelled(cancellation);
-        if (options.outWidth <= 0 || options.outHeight <= 0
-                || (long) options.outWidth * options.outHeight > 100_000_000L) {
+        if (options.outWidth <= 0 || options.outHeight <= 0) {
+            return decodeWithImageDecoder(source, cancellation);
+        }
+        if ((long) options.outWidth * options.outHeight > 100_000_000L) {
             throw new IllegalArgumentException("图片格式或尺寸不支持");
         }
         int edge = Math.max(options.outWidth, options.outHeight);
@@ -75,29 +77,56 @@ public final class ChatImageLoader {
         try (MediaMemoryBudget.Reservation ignored = MediaMemoryBudget.acquire(pixels * 8L, cancellation)) {
             ChatMediaLoader.checkCancelled(cancellation);
             Bitmap decoded = BitmapFactory.decodeByteArray(source, 0, source.length, options);
+            if (decoded == null) return decodeWithImageDecoder(source, cancellation);
+            return encode(decoded, source, cancellation);
+        }
+    }
+
+    /** BitmapFactory cannot probe some CDN formats (for example AVIF/HEIF variants); ImageDecoder can. */
+    private static ChatImage decodeWithImageDecoder(byte[] source, MediaReadCancellation cancellation) throws Exception {
+        ChatMediaLoader.checkCancelled(cancellation);
+        if (android.os.Build.VERSION.SDK_INT < 28) throw new IllegalArgumentException("图片格式或尺寸不支持");
+        try {
+            android.graphics.ImageDecoder.Source imageSource =
+                    android.graphics.ImageDecoder.createSource(java.nio.ByteBuffer.wrap(source));
+            Bitmap decoded = android.graphics.ImageDecoder.decodeBitmap(imageSource, (decoder, info, ignored) -> {
+                int width = info.getSize().getWidth();
+                int height = info.getSize().getHeight();
+                int edge = Math.max(width, height);
+                int sample = 1;
+                while (edge / sample > MAX_EDGE) sample *= 2;
+                decoder.setTargetSampleSize(sample);
+                decoder.setAllocator(android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE);
+            });
             if (decoded == null) throw new IllegalArgumentException("无法解码所选图片");
-            Bitmap opaque = null;
-            try {
-                ChatMediaLoader.checkCancelled(cancellation);
-                Matrix orientation = orientation(source);
-                ChatMediaLoader.checkCancelled(cancellation);
-                RectF bounds = new RectF(0, 0, decoded.getWidth(), decoded.getHeight());
-                orientation.mapRect(bounds);
-                orientation.postTranslate(-bounds.left, -bounds.top);
-                opaque = Bitmap.createBitmap(Math.round(bounds.width()), Math.round(bounds.height()), Bitmap.Config.ARGB_8888);
-                Canvas canvas = new Canvas(opaque);
-                canvas.drawColor(Color.WHITE);
-                canvas.drawBitmap(decoded, orientation, new Paint(Paint.FILTER_BITMAP_FLAG));
-                ChatMediaLoader.checkCancelled(cancellation);
-                ByteArrayOutputStream jpeg = new ByteArrayOutputStream();
-                if (!opaque.compress(Bitmap.CompressFormat.JPEG, 90, jpeg)) throw new IllegalStateException("图片转换失败");
-                ChatMediaLoader.checkCancelled(cancellation);
-                if (jpeg.size() > ChatImage.MAX_BYTES) throw new IllegalArgumentException("转换后的图片超过 " + (ChatImage.MAX_BYTES / (1024 * 1024)) + " MB，请选择较小图片");
-                return new ChatImage("image/jpeg", jpeg.toByteArray());
-            } finally {
-                if (opaque != null) opaque.recycle();
-                decoded.recycle();
-            }
+            return encode(decoded, source, cancellation);
+        } catch (java.io.IOException failure) {
+            throw new IllegalArgumentException("图片格式或尺寸不支持", failure);
+        }
+    }
+
+    private static ChatImage encode(Bitmap decoded, byte[] source, MediaReadCancellation cancellation) throws Exception {
+        Bitmap opaque = null;
+        try {
+            ChatMediaLoader.checkCancelled(cancellation);
+            Matrix orientation = orientation(source);
+            ChatMediaLoader.checkCancelled(cancellation);
+            RectF bounds = new RectF(0, 0, decoded.getWidth(), decoded.getHeight());
+            orientation.mapRect(bounds);
+            orientation.postTranslate(-bounds.left, -bounds.top);
+            opaque = Bitmap.createBitmap(Math.round(bounds.width()), Math.round(bounds.height()), Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(opaque);
+            canvas.drawColor(Color.WHITE);
+            canvas.drawBitmap(decoded, orientation, new Paint(Paint.FILTER_BITMAP_FLAG));
+            ChatMediaLoader.checkCancelled(cancellation);
+            ByteArrayOutputStream jpeg = new ByteArrayOutputStream();
+            if (!opaque.compress(Bitmap.CompressFormat.JPEG, 90, jpeg)) throw new IllegalStateException("图片转换失败");
+            ChatMediaLoader.checkCancelled(cancellation);
+            if (jpeg.size() > ChatImage.MAX_BYTES) throw new IllegalArgumentException("转换后的图片超过 " + (ChatImage.MAX_BYTES / (1024 * 1024)) + " MB，请选择较小图片");
+            return new ChatImage("image/jpeg", jpeg.toByteArray());
+        } finally {
+            if (opaque != null) opaque.recycle();
+            decoded.recycle();
         }
     }
 

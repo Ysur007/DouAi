@@ -121,7 +121,7 @@ public final class AutomationImages {
                 String detail = failure instanceof IllegalArgumentException || failure instanceof IllegalStateException
                         ? String.valueOf(failure.getMessage()) : failure.getClass().getSimpleName();
                 DouAiLog.event("auto_reply", "image_fetch", "failed",
-                        "host=" + hostOf(current) + ";status=" + status + ";error=" + detail);
+                        "host=" + hostOf(current) + ";status=" + status + ";type=" + connection.getContentType() + ";error=" + detail);
                 throw failure;
             } finally {
                 cancellation.close(connection);
