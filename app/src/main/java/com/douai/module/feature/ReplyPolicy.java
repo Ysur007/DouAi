@@ -81,6 +81,7 @@ public final class ReplyPolicy {
             java.util.List<String> inline = recognize
                     ? AutomationImages.inlinePayloads(content) : java.util.Collections.emptyList();
             if (recognize && images.isEmpty() && inline.isEmpty()) return rejected("image_source_missing", "type=27;recognize_images=true");
+            if (recognize) DouAiLog.event("auto_reply", "image_payload", "shape", AutomationImages.shape(content));
             boolean videoMessage = AutomationReplyMedia.isVideoMessageType(type);
             String video = videoMessage
                     && options.enabled(LocalOptions.REPLY_RECOGNIZE_VIDEO, false)

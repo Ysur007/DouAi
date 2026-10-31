@@ -121,6 +121,37 @@ public final class AutomationImages {
         }
     }
 
+    /**
+     * Shape-only listing: field names plus value lengths. Used to locate the host key field
+     * (oid/skey on the encrypted url model) without writing any payload value to disk.
+     */
+    public static String shape(JSONObject content) {
+        StringBuilder out = new StringBuilder();
+        shape(content, "", out, 0);
+        return out.length() > 900 ? out.substring(0, 900) : out.toString();
+    }
+
+    private static void shape(Object node, String path, StringBuilder out, int depth) {
+        if (node == null || depth > 3 || out.length() > 900) return;
+        if (node instanceof JSONObject) {
+            java.util.Iterator<String> names = ((JSONObject) node).keys();
+            while (names.hasNext()) {
+                String name = names.next();
+                shape(((JSONObject) node).opt(name), path.isEmpty() ? name : path + "." + name, out, depth + 1);
+            }
+        } else if (node instanceof JSONArray) {
+            JSONArray array = (JSONArray) node;
+            if (out.length() > 0) out.append('|');
+            out.append(path).append("[]=").append(array.length());
+            for (int i = 0; i < Math.min(1, array.length()); i++) {
+                shape(array.opt(i), path + "[]", out, depth + 1);
+            }
+        } else {
+            if (out.length() > 0) out.append('|');
+            out.append(path).append(':').append(String.valueOf(node).length());
+        }
+    }
+
     /** Key names only; payload values are never written to the log. */
     private static String keys(JSONObject content) {
         StringBuilder text = new StringBuilder();
