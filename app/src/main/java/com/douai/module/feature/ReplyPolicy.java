@@ -180,8 +180,11 @@ public final class ReplyPolicy {
             if (videoMessage && (video == null || video.isEmpty())) return rejected("video_disabled_or_playable_source_unproved", "type=" + type);
             if (video == null) video = "";
             String text = content.optString("text", "").trim();
+            // The same share payload arrives as type 8 on some builds and as type 27 on others, so
+            // the shape decides, not the type number.
+            boolean shareCard = content.has("content_thumb") || content.has("content_name");
             if (STICKER_TYPE == type) text = stickerLabel(content);
-            if (SHARE_VIDEO_TYPE == type) text = shareLabel(content);
+            if (shareCard) text = shareLabel(content);
             String messageText = text;
             if (text.isEmpty() && (!images.isEmpty() || !inline.isEmpty())) text = "请根据对方发来的图片回复对方。";
             if (text.isEmpty() && !video.isEmpty()) text = "请根据对方发来的视频画面回复对方。";
