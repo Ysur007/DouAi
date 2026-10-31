@@ -204,8 +204,10 @@ public final class AutomationImages {
         for (int redirect = 0; redirect < 2; redirect++) {
             cancellation.check();
             if (!isMediaUrl(current)) throw new IllegalArgumentException("图片地址不受支持（仅允许公网 http/https）");
-            long httpStart = SystemClock.elapsedRealtime();
+            long tOpen = SystemClock.elapsedRealtime();
+            long httpStart = tOpen;
             HttpURLConnection connection = cancellation.open(URI.create(current));
+            long tConnected = SystemClock.elapsedRealtime();
             int status = -1;
             byte[] body = null;
             long cryptoMillis = 0;
@@ -213,7 +215,10 @@ public final class AutomationImages {
                 cancellation.check();
                 connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/120.0 Mobile Safari/537.36");
                 if (isByteDanceHost(hostOf(current))) connection.setRequestProperty("Referer", "https://www.douyin.com/");
+                connection.setRequestProperty("Accept-Encoding", "identity");
+                connection.setRequestProperty("Connection", "close");
                 status = connection.getResponseCode();
+                long tHeaders = SystemClock.elapsedRealtime();
                 if (status >= 300 && status < 400) {
                     String location = connection.getHeaderField("Location");
                     if (location == null) throw new IllegalStateException("图片地址跳转无效");
@@ -222,8 +227,10 @@ public final class AutomationImages {
                 }
                 if (status != 200) throw new IllegalStateException("图片下载失败");
                 if (connection.getContentLengthLong() > ChatImageLoader.MAX_SOURCE_BYTES) throw new IllegalArgumentException("图片超过 " + (ChatImageLoader.MAX_SOURCE_BYTES / (1024 * 1024)) + " MB");
+                long tBody;
                 try (InputStream input = connection.getInputStream()) {
                     body = ChatImageLoader.read(input, cancellation);
+                    tBody = SystemClock.elapsedRealtime();
                 }
                 byte[] data = isGzip(body) ? gunzip(body) : body;
                 if (!ImageCrypto.looksLikeImage(data)) {
@@ -238,10 +245,14 @@ public final class AutomationImages {
                                 "bytes=" + data.length + ";candidates=" + keyCandidates.size());
                     }
                 }
+                long tDecoded = SystemClock.elapsedRealtime();
                 ChatImage image = ChatImageLoader.decode(data, cancellation);
+                long tEnd = SystemClock.elapsedRealtime();
                 cancellation.check();
                 DouAiLog.event("auto_reply", "image_timing", "fetch",
-                        "http_ms=" + (SystemClock.elapsedRealtime() - httpStart) + ";crypto_ms=" + cryptoMillis
+                        "open=" + (tConnected - tOpen) + ";head=" + (tHeaders - tConnected)
+                                + ";body=" + (tBody - tHeaders) + ";crypto=" + cryptoMillis
+                                + ";decode=" + (tEnd - tDecoded) + ";total=" + (tEnd - httpStart)
                                 + ";host=" + hostOf(current) + ";bytes=" + image.sizeBytes());
                 return image;
             } catch (Exception failure) {
