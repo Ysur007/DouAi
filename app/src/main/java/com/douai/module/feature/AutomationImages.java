@@ -166,6 +166,20 @@ public final class AutomationImages {
         return text.toString();
     }
 
+    private static String hostOf(String value) {
+        try { String host = URI.create(value).getHost(); return host == null ? "" : host; }
+        catch (RuntimeException ignored) { return ""; }
+    }
+
+    private static boolean isByteDanceHost(String host) {
+        if (host == null || host.isEmpty()) return false;
+        for (String domain : new String[]{"douyinpic.com", "byteimg.com", "ibyteimg.com", "pstatp.com",
+                "douyincdn.com", "snssdk.com", "bytedance.com", "bytecdn.cn", "douyinstatic.com"}) {
+            if (host.equals(domain) || host.endsWith("." + domain)) return true;
+        }
+        return false;
+    }
+
     public static boolean isMediaUrl(String value) {
         try {
             URI uri = URI.create(value);
