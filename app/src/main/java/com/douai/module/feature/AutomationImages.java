@@ -21,9 +21,9 @@ public final class AutomationImages {
     /** Upper bound for the encrypted-CDN fallback so text replies are never queued behind it. */
     private static final long MEDIA_BUDGET_MILLIS = 12_000;
     /** Concurrent candidate fetches; the signed hosts differ widely in first-byte latency. */
-    private static final int MAX_PARALLEL_SOURCES = 6;
+    private static final int MAX_PARALLEL_SOURCES = 4;
     /** Extra window after the first variant lands, so a larger copy can still be chosen. */
-    private static final long RACE_GRACE_MILLIS = 2_500;
+    private static final long RACE_GRACE_MILLIS = 1_200;
     /** Decrypted images keyed by source url, so a repeated fetch costs nothing. */
     private static final java.util.Map<String, ChatImage> CACHE =
             java.util.Collections.synchronizedMap(new java.util.LinkedHashMap<String, ChatImage>(8, 0.75f, true) {

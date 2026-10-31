@@ -21,7 +21,7 @@ public final class AutomationReplyMedia {
 
     /** How long a reply may wait for the full-size original before falling back. */
     private static final long ORIGINAL_BUDGET_MILLIS = 12_000;
-    private static final long ORIGINAL_BUDGET_WITH_INLINE_MILLIS = 5_000;
+    private static final long ORIGINAL_BUDGET_WITH_INLINE_MILLIS = 2_500;
 
     private AutomationReplyMedia() { }
 
