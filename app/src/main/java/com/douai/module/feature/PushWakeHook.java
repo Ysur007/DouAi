@@ -15,7 +15,7 @@ import io.github.libxposed.api.XposedInterface;
 public final class PushWakeHook {
     private static final String TARGET = "com.ss.android.ugc.aweme";
     private static final String LAUNCH = "com.ss.android.ugc.aweme.splash.SplashActivity";
-    private static final long MIN_INTERVAL_MS = 60_000L;
+    private static final long MIN_INTERVAL_MS = 180_000L;
 
     private static volatile long lastWake;
     private static volatile String lastResult = "idle";
@@ -56,6 +56,23 @@ public final class PushWakeHook {
         wake(channel);
     }
 
+    /** Reports whether the host process is listed; the size reveals how much the system shows us. */
+    private static String hostState(android.content.Context context) {
+        try {
+            android.app.ActivityManager manager =
+                    (android.app.ActivityManager) context.getSystemService(android.content.Context.ACTIVITY_SERVICE);
+            java.util.List<android.app.ActivityManager.RunningAppProcessInfo> processes =
+                    manager.getRunningAppProcesses();
+            if (processes == null) return "procs=none";
+            for (android.app.ActivityManager.RunningAppProcessInfo info : processes) {
+                if (TARGET.equals(info.processName)) return "alive;procs=" + processes.size();
+            }
+            return "gone;procs=" + processes.size();
+        } catch (Throwable failure) {
+            return "unknown:" + failure.getClass().getSimpleName();
+        }
+    }
+
     /** LSPosed redirects module logging, so the outcome is written where it can be read. */
     private static void record(android.content.Context context, String text) {
         try {
@@ -78,6 +95,14 @@ public final class PushWakeHook {
             intent.setClassName(TARGET, LAUNCH);
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             android.content.Context context = (android.content.Context) app;
+
+            // A live host already owns the connection, so waking it would only yank the user around.
+            String alive = hostState(context);
+            if (alive.startsWith("alive")) {
+                lastResult = "skipped_alive:" + reason + ";" + alive;
+                record(context, lastResult);
+                return;
+            }
 
             // With the screen off the device may be dozing, so the CPU is held awake for the launch.
             android.os.PowerManager power =
