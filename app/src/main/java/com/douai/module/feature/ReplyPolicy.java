@@ -86,8 +86,8 @@ public final class ReplyPolicy {
     private static String shareLabel(JSONObject content) {
         // content_name is the author nickname, not the title; the caption lives in another field.
         String author = content.optString("content_name", "").trim();
-        String title = firstText(content, "title", "desc", "content_desc", "share_desc", "aweme_desc",
-                "content_title", "sub_title", "subtitle");
+        String title = firstText(content, "content_title", "title", "desc", "content_desc",
+                "share_desc", "aweme_desc", "sub_title", "subtitle");
         if (!shareSampled) {
             shareSampled = true;
             StringBuilder keys = new StringBuilder();
@@ -185,6 +185,13 @@ public final class ReplyPolicy {
             boolean shareCard = content.has("content_thumb") || content.has("content_name");
             if (STICKER_TYPE == type) text = stickerLabel(content);
             if (shareCard) {
+                String cover = content.optString("cover_url", "").trim();
+                if (AutomationImages.isMediaUrl(cover)) {
+                    java.util.List<String> ordered = new java.util.ArrayList<>();
+                    ordered.add(cover);
+                    for (String url : images) if (!cover.equals(url)) ordered.add(url);
+                    images = ordered;
+                }
                 boolean coverReady = !images.isEmpty() || !inline.isEmpty();
                 text = shareLabel(content) + (coverReady ? "（封面已附上）" : "（封面未取到）");
             }
