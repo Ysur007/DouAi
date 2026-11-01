@@ -70,13 +70,15 @@ public final class PushWakeHook {
             android.content.Context context = (android.content.Context) app;
             // Launch behind the current task so the user is not pulled out of whatever they were doing.
             try {
+                // setLaunchTaskBehind is not part of the public SDK, so it is reached reflectively.
                 android.app.ActivityOptions options = android.app.ActivityOptions.makeBasic();
-                options.setLaunchTaskBehind(true);
+                java.lang.reflect.Method setter = android.app.ActivityOptions.class
+                        .getMethod("setLaunchTaskBehind", boolean.class);
+                setter.invoke(options, true);
                 context.startActivity(intent, options.toBundle());
                 lastResult = "started_behind:" + reason;
             } catch (Throwable behind) {
-                context.startActivity(intent);
-                lastResult = "started_front:" + behind.getClass().getSimpleName();
+                lastResult = "behind_unsupported:" + behind.getClass().getSimpleName();
             }
         } catch (Throwable failure) {
             lastResult = "failed:" + failure.getClass().getSimpleName();
