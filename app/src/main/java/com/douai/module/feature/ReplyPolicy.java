@@ -184,7 +184,10 @@ public final class ReplyPolicy {
             // the shape decides, not the type number.
             boolean shareCard = content.has("content_thumb") || content.has("content_name");
             if (STICKER_TYPE == type) text = stickerLabel(content);
-            if (shareCard) text = shareLabel(content);
+            if (shareCard) {
+                boolean coverReady = !images.isEmpty() || !inline.isEmpty();
+                text = shareLabel(content) + (coverReady ? "（封面已附上）" : "（封面未取到）");
+            }
             String messageText = text;
             if (text.isEmpty() && (!images.isEmpty() || !inline.isEmpty())) text = "请根据对方发来的图片回复对方。";
             if (text.isEmpty() && !video.isEmpty()) text = "请根据对方发来的视频画面回复对方。";
