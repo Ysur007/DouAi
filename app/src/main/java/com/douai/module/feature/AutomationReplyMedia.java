@@ -23,7 +23,7 @@ public final class AutomationReplyMedia {
     private static final long ORIGINAL_BUDGET_MILLIS = 12_000;
     private static final long ORIGINAL_BUDGET_WITH_INLINE_MILLIS = 2_500;
     /** Share cards have no inline fallback but do have a title, so they wait briefly and degrade. */
-    private static final long SHARE_BUDGET_MILLIS = 6_000;
+    private static final long SHARE_BUDGET_MILLIS = 20_000;
 
     private AutomationReplyMedia() { }
 
