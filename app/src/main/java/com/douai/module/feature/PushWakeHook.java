@@ -25,6 +25,8 @@ public final class PushWakeHook {
     public static void install(XposedInterface framework) {
         hookNotify(framework, "notify", String.class, int.class, Notification.class);
         hookNotify(framework, "notify", int.class, Notification.class);
+        hookNotify(framework, "notifyAsPackage", String.class, String.class, int.class, Notification.class);
+        hookNotify(framework, "notifyAsPackage", String.class, int.class, Notification.class);
         android.util.Log.i("DouAi", "push_wake hooked result=" + lastResult);
     }
 
@@ -49,6 +51,7 @@ public final class PushWakeHook {
         if (!(candidate instanceof Notification)) return;
         Notification notification = (Notification) candidate;
         String channel = notification.getChannelId();
+        android.util.Log.i("DouAi", "notify_seen channel=" + channel);
         if (channel == null || !channel.contains(TARGET)) return;
         wake(channel);
     }
