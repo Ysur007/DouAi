@@ -24,6 +24,8 @@ public final class AutomationImages {
     private static final int MAX_PARALLEL_SOURCES = 4;
     /** Extra window after the first variant lands, so a larger copy can still be chosen. */
     private static final long RACE_GRACE_MILLIS = 1_200;
+    /** Below this size a cover carries no readable detail, so it is neither reused nor stored. */
+    private static final int MIN_USEFUL_BYTES = 20_000;
     /** Decrypted images keyed by source url, so a repeated fetch costs nothing. */
     private static final java.util.Map<String, ChatImage> CACHE =
             java.util.Collections.synchronizedMap(new java.util.LinkedHashMap<String, ChatImage>(8, 0.75f, true) {
@@ -220,7 +222,7 @@ public final class AutomationImages {
         cancellation.start();
         for (String url : urls) {
             ChatImage hit = CACHE.get(url);
-            if (hit != null) {
+            if (hit != null && hit.sizeBytes() >= MIN_USEFUL_BYTES) {
                 DouAiLog.event("auto_reply", "image_source", "cache_hit", "bytes=" + hit.sizeBytes());
                 List<ChatImage> cached = new ArrayList<>();
                 cached.add(hit);
@@ -275,7 +277,11 @@ public final class AutomationImages {
             }
             DouAiLog.event("auto_reply", "image_source", "race_result",
                     "variants=" + finished.size() + ";picked=" + winner.sizeBytes() + ";budget=" + budgetMillis);
-            for (String url : candidates) CACHE.put(url, winner);
+            if (winner.sizeBytes() >= MIN_USEFUL_BYTES) {
+                for (String url : candidates) CACHE.put(url, winner);
+            } else {
+                CACHE.clear();
+            }
             List<ChatImage> images = new ArrayList<>();
             images.add(winner);
             return images;
