@@ -67,8 +67,17 @@ public final class PushWakeHook {
             Intent intent = new Intent();
             intent.setClassName(TARGET, LAUNCH);
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            ((android.content.Context) app).startActivity(intent);
-            lastResult = "started:" + reason;
+            android.content.Context context = (android.content.Context) app;
+            // Launch behind the current task so the user is not pulled out of whatever they were doing.
+            try {
+                android.app.ActivityOptions options = android.app.ActivityOptions.makeBasic();
+                options.setLaunchTaskBehind(true);
+                context.startActivity(intent, options.toBundle());
+                lastResult = "started_behind:" + reason;
+            } catch (Throwable behind) {
+                context.startActivity(intent);
+                lastResult = "started_front:" + behind.getClass().getSimpleName();
+            }
         } catch (Throwable failure) {
             lastResult = "failed:" + failure.getClass().getSimpleName();
         }
