@@ -79,16 +79,6 @@ public final class PushWakeHook {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             android.content.Context context = (android.content.Context) app;
             // Launch behind the current task so the user is not pulled out of whatever they were doing.
-            // Waking while the screen is on would yank the user out of whatever they are doing,
-            // so it only happens with the screen off, where the launch is invisible.
-            android.os.PowerManager power =
-                    (android.os.PowerManager) context.getSystemService(android.content.Context.POWER_SERVICE);
-            if (power != null && power.isInteractive()) {
-                lastResult = "skipped_screen_on:" + reason;
-                record(context, lastResult);
-                return;
-            }
-
             String stage = "behind_ok";
             try {
                 // setLaunchTaskBehind is not part of the public SDK, so it is reached reflectively.
