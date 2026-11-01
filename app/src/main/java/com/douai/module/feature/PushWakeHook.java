@@ -56,6 +56,16 @@ public final class PushWakeHook {
         wake(channel);
     }
 
+    /** LSPosed redirects module logging, so the outcome is written where it can be read. */
+    private static void record(android.content.Context context, String text) {
+        try {
+            java.io.File file = new java.io.File(context.getFilesDir(), "douai_push_wake.log");
+            try (java.io.FileOutputStream out = new java.io.FileOutputStream(file, false)) {
+                out.write((System.currentTimeMillis() + " " + text).getBytes("UTF-8"));
+            }
+        } catch (Throwable ignored) { }
+    }
+
     private static void wake(String reason) {
         long now = System.currentTimeMillis();
         if (now - lastWake < MIN_INTERVAL_MS) return;
@@ -69,6 +79,7 @@ public final class PushWakeHook {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             android.content.Context context = (android.content.Context) app;
             // Launch behind the current task so the user is not pulled out of whatever they were doing.
+            String stage = "behind_ok";
             try {
                 // setLaunchTaskBehind is not part of the public SDK, so it is reached reflectively.
                 android.app.ActivityOptions options = android.app.ActivityOptions.makeBasic();
@@ -76,10 +87,17 @@ public final class PushWakeHook {
                         .getMethod("setLaunchTaskBehind", boolean.class);
                 setter.invoke(options, true);
                 context.startActivity(intent, options.toBundle());
-                lastResult = "started_behind:" + reason;
             } catch (Throwable behind) {
-                lastResult = "behind_unsupported:" + behind.getClass().getSimpleName();
+                stage = "behind_failed:" + behind.getClass().getSimpleName();
+                try {
+                    context.startActivity(intent);
+                    stage = stage + ";front_ok";
+                } catch (Throwable front) {
+                    stage = stage + ";front_failed:" + front.getClass().getSimpleName();
+                }
             }
+            lastResult = stage + ":" + reason;
+            record(context, lastResult);
         } catch (Throwable failure) {
             lastResult = "failed:" + failure.getClass().getSimpleName();
         }
