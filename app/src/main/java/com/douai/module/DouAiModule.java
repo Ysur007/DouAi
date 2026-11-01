@@ -188,6 +188,7 @@ public final class DouAiModule extends XposedModule {
         // touch host-specific logic outside the Douyin package.
         if ("com.xiaomi.xmsf".equals(param.getPackageName())) {
             android.util.Log.i(TAG, "xmsf_injected main=" + isMainProcess + " first=" + param.isFirstPackage());
+            PushWakeHook.install(this);
             return;
         }
         if (!isMainProcess || !TARGET_PACKAGE.equals(param.getPackageName()) || !param.isFirstPackage()
