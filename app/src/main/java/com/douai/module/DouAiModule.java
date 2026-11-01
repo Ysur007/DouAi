@@ -184,6 +184,12 @@ public final class DouAiModule extends XposedModule {
 
     @Override
     public void onPackageLoaded(XposedModuleInterface.PackageLoadedParam param) {
+        // Static scope also covers the Xiaomi push process; only prove injection there, never
+        // touch host-specific logic outside the Douyin package.
+        if ("com.xiaomi.xmsf".equals(param.getPackageName())) {
+            android.util.Log.i(TAG, "xmsf_injected main=" + isMainProcess + " first=" + param.isFirstPackage());
+            return;
+        }
         if (!isMainProcess || !TARGET_PACKAGE.equals(param.getPackageName()) || !param.isFirstPackage()
                 || scanScheduled) {
             DouAiLog.event("host_scan", "scan_gate", "package_not_eligible",
