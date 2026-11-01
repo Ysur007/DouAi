@@ -78,6 +78,18 @@ public final class PushWakeHook {
             intent.setClassName(TARGET, LAUNCH);
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             android.content.Context context = (android.content.Context) app;
+
+            // With the screen off the device may be dozing, so the CPU is held awake for the launch.
+            android.os.PowerManager power =
+                    (android.os.PowerManager) context.getSystemService(android.content.Context.POWER_SERVICE);
+            boolean interactive = power != null && power.isInteractive();
+            android.os.PowerManager.WakeLock lock = null;
+            if (power != null) {
+                try {
+                    lock = power.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "DouAi:pushwake");
+                    lock.acquire(15_000L);
+                } catch (Throwable ignored) { }
+            }
             // Launch behind the current task so the user is not pulled out of whatever they were doing.
             String stage = "behind_ok";
             try {
@@ -96,7 +108,10 @@ public final class PushWakeHook {
                     stage = stage + ";front_failed:" + front.getClass().getSimpleName();
                 }
             }
-            lastResult = stage + ":" + reason;
+            if (lock != null && lock.isHeld()) {
+                try { lock.release(); } catch (Throwable ignored) { }
+            }
+            lastResult = stage + ":" + reason + ";screen_on=" + interactive;
             record(context, lastResult);
         } catch (Throwable failure) {
             lastResult = "failed:" + failure.getClass().getSimpleName();
