@@ -78,7 +78,11 @@ public final class ReplyPolicy {
                 if (keys.length() > 0) keys.append(',');
                 keys.append(names.next());
             }
-            DouAiLog.event("auto_reply", "content_probe", "sticker_keys", keys.toString());
+            String all = keys.toString();
+            for (int part = 0; part * 90 < all.length() && part < 5; part++) {
+                DouAiLog.event("auto_reply", "content_probe", "sticker_keys_" + part,
+                        all.substring(part * 90, Math.min(all.length(), (part + 1) * 90)));
+            }
             DouAiLog.event("auto_reply", "content_probe", "sticker_fields",
                     "display_name=" + clip(content.optString("display_name", ""))
                             + ";emoji_source=" + clip(content.optString("emoji_source", ""))
@@ -168,8 +172,9 @@ public final class ReplyPolicy {
             JSONObject content = new JSONObject(values.getAsString("content"));
             // A shared video carries its cover in content_thumb, which travels through the same
             // encrypted-URL path as an ordinary picture.
-            // Stickers may carry their own artwork; if they do, the picture pipeline picks it up.
-            boolean recognize = (type == 27 || SHARE_VIDEO_TYPE == type || STICKER_TYPE == type)
+            // Sticker payloads carry schema and avatar urls too, so only pictures and share cards
+            // are trusted to the generic url collector.
+            boolean recognize = (type == 27 || SHARE_VIDEO_TYPE == type)
                     && options.enabled(LocalOptions.REPLY_RECOGNIZE_IMAGES, true);
             java.util.List<String> images = recognize
                     ? AutomationReplyMedia.incomingImages(content) : java.util.Collections.emptyList();
