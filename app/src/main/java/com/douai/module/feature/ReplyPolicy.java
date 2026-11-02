@@ -83,6 +83,15 @@ public final class ReplyPolicy {
                 DouAiLog.event("auto_reply", "content_probe", "sticker_keys_" + part,
                         all.substring(part * 90, Math.min(all.length(), (part + 1) * 90)));
             }
+            DouAiLog.event("auto_reply", "content_probe", "sticker_v1",
+                    "name=" + clip(content.optString("display_name", ""))
+                            + ";kw=" + clip(content.optString("keyword", ""))
+                            + ";hint=" + clip(content.optString("hint_content", "")));
+            DouAiLog.event("auto_reply", "content_probe", "sticker_v2",
+                    "stype=" + clip(content.optString("sticker_type", ""))
+                            + ";rtype=" + clip(content.optString("resource_type", ""))
+                            + ";uri=" + clip(content.optString("uri", content.optString("url", "")))
+                            + ";pkg=" + clip(content.optString("package_id", "")));
             DouAiLog.event("auto_reply", "content_probe", "sticker_fields",
                     "display_name=" + clip(content.optString("display_name", ""))
                             + ";emoji_source=" + clip(content.optString("emoji_source", ""))
