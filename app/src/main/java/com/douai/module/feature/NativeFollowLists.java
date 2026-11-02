@@ -139,6 +139,19 @@ public final class NativeFollowLists implements AutoCloseable {
         }, Math.max(0, next - now), TimeUnit.MILLISECONDS);
     }
 
+    /** Every profile learned from the following and follower snapshots, for name and avatar lookups. */
+    public static Map<String, ProfileListEntry> knownProfiles() {
+        NativeFollowLists current = active;
+        if (current == null) return Collections.emptyMap();
+        Map<String, ProfileListEntry> merged = new java.util.LinkedHashMap<>();
+        for (Map<String, ProfileListEntry> map : current.details.values()) {
+            for (Map.Entry<String, ProfileListEntry> entry : map.entrySet()) {
+                merged.putIfAbsent(entry.getKey(), entry.getValue());
+            }
+        }
+        return merged;
+    }
+
     public static boolean isAvailable() { return active != null && !active.closed; }
 
     public static String currentAccountUid() {

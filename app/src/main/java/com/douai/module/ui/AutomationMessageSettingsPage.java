@@ -747,7 +747,11 @@ final class AutomationMessageSettingsPage implements AutoCloseable {
             return;
         }
         java.util.Set<String> selected = com.douai.module.feature.ReplyPolicy.targets(repository.getString(key, ""));
-        showProfileSelection(title, NativeMessagingHooks.availableContactProfiles(), selected,
+        // Recent chats only cover people actually talked to, so the relationship lists fill in the rest.
+        java.util.Map<String, com.douai.module.feature.ProfileListEntry> available =
+                new java.util.LinkedHashMap<>(com.douai.module.feature.NativeFollowLists.knownProfiles());
+        available.putAll(NativeMessagingHooks.availableContactProfiles());
+        showProfileSelection(title, available, selected,
                 next -> repository.putString(key, String.join(",", next)), () -> showTargetIds(title, key));
     }
 
