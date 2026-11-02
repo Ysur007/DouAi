@@ -692,6 +692,11 @@ public final class ChatCompletionClient {
         if (memoryPrefix != null && !memoryPrefix.isEmpty()) {
             systemPrompt = systemPrompt + "\n\n[更早的对话背景] " + memoryPrefix;
         }
+        // The model has no clock of its own, so every request states the local time explicitly.
+        java.text.SimpleDateFormat clock =
+                new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm EEEE", java.util.Locale.CHINA);
+        clock.setTimeZone(java.util.TimeZone.getTimeZone("Asia/Shanghai"));
+        systemPrompt = systemPrompt + "\n\n[现在时间] " + clock.format(new java.util.Date());
         String currentPrompt = taskPrompt(prompt, secondaryPrompt);
         JSONObject body = new JSONObject().put("model", config.modelName);
         JSONObject parameters = config.parameters();
