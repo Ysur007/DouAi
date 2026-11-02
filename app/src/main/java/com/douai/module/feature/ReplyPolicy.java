@@ -217,8 +217,10 @@ public final class ReplyPolicy {
                     && options.enabled(LocalOptions.REPLY_RECOGNIZE_IMAGES, true);
             // A sticker's payload also carries schema and avatar urls, so its artwork is read from
             // the dedicated uri field instead of the generic collector.
+            boolean stickerPayload = STICKER_TYPE == type
+                    || content.has("emoji_type") || content.has("emoji_source");
             java.util.List<String> images = recognize
-                    ? (STICKER_TYPE == type ? stickerImageUrls(content)
+                    ? (stickerPayload ? stickerImageUrls(content)
                             : AutomationReplyMedia.incomingImages(content))
                     : java.util.Collections.emptyList();
             java.util.List<String> inline = recognize
@@ -239,7 +241,7 @@ public final class ReplyPolicy {
             // The same share payload arrives as type 8 on some builds and as type 27 on others, so
             // the shape decides, not the type number.
             boolean shareCard = content.has("content_thumb") || content.has("content_name");
-            if (STICKER_TYPE == type) text = stickerLabel(content);
+            if (stickerPayload) text = stickerLabel(content);
             if (shareCard) {
                 String cover = content.optString("cover_url", "").trim();
                 if (AutomationImages.isMediaUrl(cover)) {
