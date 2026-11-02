@@ -75,7 +75,7 @@ public final class FollowListPager {
             }
             requireCurrent(accountCurrent);
             // Each page is recorded so a premature stop can be told apart from a short list.
-            com.douai.module.diagnostics.com.douai.module.diagnostics.DouAiLog.event("auto_reply", "follow_paging", "page",
+            com.douai.module.diagnostics.DouAiLog.event("auto_reply", "follow_paging", "page",
                     "kind=" + kind + ";n=" + page + ";rows=" + rows + ";more=" + hasMore
                             + ";got=" + users.size() + ";max=" + cursor.maxTime + ";off=" + cursor.offset);
             if (!hasMore) return Collections.unmodifiableMap(new LinkedHashMap<>(users));
@@ -133,7 +133,7 @@ public final class FollowListPager {
         Object vcdValue = value(response, "vcd_count", new String[]{"vcdCount"},
                 new String[]{"getVcdCount"});
         int vcdCount = vcdValue == null ? previous.vcdCount : requiredInt(vcdValue, "vcd_count");
-        com.douai.module.diagnostics.com.douai.module.diagnostics.DouAiLog.event("auto_reply", "follow_paging", "cursor",
+        com.douai.module.diagnostics.DouAiLog.event("auto_reply", "follow_paging", "cursor",
                 "kind=" + kind + ";max=" + maxTime + ";min=" + minTime + ";off=" + offset);
         return new Cursor(maxTime, minTime, offset, storePage, vcdCount);
     }
