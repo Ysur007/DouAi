@@ -105,11 +105,16 @@ public final class FollowListPager {
     }
 
     private static Cursor next(Kind kind, Object response, Cursor previous) {
-        long maxTime = requiredNonnegative(value(response, "min_time", new String[]{"minTime"},
+        // FOLLOWING pages on max_time, FOLLOWERS on min_time; swapping them sends a zero cursor
+        // on the second page and the endpoint answers with an empty list.
+        long maxTime = kind == Kind.FOLLOWING
+                ? requiredNonnegative(value(response, "max_time", new String[]{"maxTime"},
+                new String[]{"getMaxTime"}), "max_time")
+                : requiredNonnegative(value(response, "min_time", new String[]{"minTime"},
                 new String[]{"getMinTime"}), "min_time");
         long minTime = kind == Kind.FOLLOWING
-                ? requiredNonnegative(value(response, "max_time", new String[]{"maxTime"},
-                new String[]{"getMaxTime"}), "max_time") : 0;
+                ? requiredNonnegative(value(response, "min_time", new String[]{"minTime"},
+                new String[]{"getMinTime"}), "min_time") : 0;
         int offset = requiredInt(value(response, "offset", new String[]{"offset"},
                 new String[]{"getOffset"}), "offset");
         Object storeValue = value(response, "store_page", new String[]{"storePage"},
