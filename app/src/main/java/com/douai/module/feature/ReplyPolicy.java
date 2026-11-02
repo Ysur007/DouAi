@@ -72,6 +72,13 @@ public final class ReplyPolicy {
         if (name.isEmpty()) name = content.optString("danmaku_text", "").trim();
         if (!stickerSampled) {
             stickerSampled = true;
+            StringBuilder keys = new StringBuilder();
+            java.util.Iterator<String> names = content.keys();
+            while (names.hasNext()) {
+                if (keys.length() > 0) keys.append(',');
+                keys.append(names.next());
+            }
+            DouAiLog.event("auto_reply", "content_probe", "sticker_keys", keys.toString());
             DouAiLog.event("auto_reply", "content_probe", "sticker_fields",
                     "display_name=" + clip(content.optString("display_name", ""))
                             + ";emoji_source=" + clip(content.optString("emoji_source", ""))
@@ -161,7 +168,8 @@ public final class ReplyPolicy {
             JSONObject content = new JSONObject(values.getAsString("content"));
             // A shared video carries its cover in content_thumb, which travels through the same
             // encrypted-URL path as an ordinary picture.
-            boolean recognize = (type == 27 || SHARE_VIDEO_TYPE == type)
+            // Stickers may carry their own artwork; if they do, the picture pipeline picks it up.
+            boolean recognize = (type == 27 || SHARE_VIDEO_TYPE == type || STICKER_TYPE == type)
                     && options.enabled(LocalOptions.REPLY_RECOGNIZE_IMAGES, true);
             java.util.List<String> images = recognize
                     ? AutomationReplyMedia.incomingImages(content) : java.util.Collections.emptyList();
