@@ -141,11 +141,15 @@ public final class ReplyPolicy {
             // are pulled out of the text directly.
             String text = raw.replace("\\/", "/");
             java.util.regex.Matcher matcher = java.util.regex.Pattern
-                    .compile("https?://[^\"\\\\\\s,]+").matcher(text);
+                    .compile("(?:https?:)?//[^\"\\\\\\s,]+").matcher(text);
             while (matcher.find()) {
                 String url = matcher.group().trim();
+                if (url.startsWith("//")) url = "https:" + url;
                 if (AutomationImages.isMediaUrl(url) && !urls.contains(url)) urls.add(url);
             }
+            DouAiLog.event("auto_reply", "image_payload", "sticker_extract",
+                    "count=" + urls.size() + ";first=" + (urls.isEmpty() ? "-" : clip(urls.get(0)))
+                            + ";raw=" + clip(raw));
         } catch (Throwable ignored) { }
         return urls;
     }
