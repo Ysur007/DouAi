@@ -75,7 +75,7 @@ public final class FollowListPager {
                             + ";got=" + users.size() + ";max=" + cursor.maxTime + ";off=" + cursor.offset);
             if (!hasMore) return Collections.unmodifiableMap(new LinkedHashMap<>(users));
             if (rows == 0) throw failure("Empty relationship page still has more users");
-            cursor = next(kind, response, cursor);
+            cursor = next(kind, response, cursor, rows);
             if (!seen.add(cursor)) throw failure("Relationship pagination repeated a cursor");
         }
         throw failure("Relationship pagination exceeds page limit");
@@ -104,7 +104,7 @@ public final class FollowListPager {
         return Collections.unmodifiableMap(query);
     }
 
-    private static Cursor next(Kind kind, Object response, Cursor previous) {
+    private static Cursor next(Kind kind, Object response, Cursor previous, int rows) {
         // FOLLOWING pages on max_time, FOLLOWERS on min_time; swapping them sends a zero cursor
         // on the second page and the endpoint answers with an empty list.
         long maxTime = kind == Kind.FOLLOWING
@@ -115,8 +115,11 @@ public final class FollowListPager {
         long minTime = kind == Kind.FOLLOWING
                 ? requiredNonnegative(value(response, "min_time", new String[]{"minTime"},
                 new String[]{"getMinTime"}), "min_time") : 0;
-        int offset = requiredInt(value(response, "offset", new String[]{"offset"},
+        // The endpoint reports offset 0 on every page, so the running total is the only usable
+        // cursor when a time based one repeats the previous page.
+        int reported = requiredInt(value(response, "offset", new String[]{"offset"},
                 new String[]{"getOffset"}), "offset");
+        int offset = reported > 0 ? reported : previous.offset + rows;
         Object storeValue = value(response, "store_page", new String[]{"storePage"},
                 new String[]{"getStorePage"});
         if (storeValue != null && !(storeValue instanceof String)) throw failure("Invalid store_page");
@@ -125,6 +128,8 @@ public final class FollowListPager {
         Object vcdValue = value(response, "vcd_count", new String[]{"vcdCount"},
                 new String[]{"getVcdCount"});
         int vcdCount = vcdValue == null ? previous.vcdCount : requiredInt(vcdValue, "vcd_count");
+        com.douai.module.diagnostics.DouAiLog.event("auto_reply", "follow_paging", "cursor",
+                "kind=" + kind + ";max=" + maxTime + ";min=" + minTime + ";off=" + offset);
         return new Cursor(maxTime, minTime, offset, storePage, vcdCount);
     }
 
