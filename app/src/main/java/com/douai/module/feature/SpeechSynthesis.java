@@ -82,12 +82,15 @@ public final class SpeechSynthesis implements AutoCloseable {
     }
 
     private void generate(Context context, String text, SpeechSettings settings) {
+        final long startedAt = System.currentTimeMillis();
         try {
             File cache = new File(context.getCacheDir(), "douai-tts");
             ensureCacheDirectory(cache);
             cleanOldFiles(cache);
             output = new File(cache, UUID.randomUUID() + ".audio");
             operation.stage("provider_request", "provider=" + provider(settings));
+            DouAiLog.event("auto_reply", "speech_timing", "provider_request",
+                    "at_ms=" + (System.currentTimeMillis() - startedAt));
             SpeechHttpClient.Resource response;
             if (settings.fish) {
                 response = FishSpeechClient.synthesize(http, text, settings.fishSettings, output, context);
@@ -109,6 +112,8 @@ public final class SpeechSynthesis implements AutoCloseable {
             http.ensureActive();
             if (!response.isAudio()) throw new IllegalArgumentException("第三方语音链接未返回音频文件");
             operation.stage("audio_received", "bytes=" + response.sizeBytes() + "; business_result=validating");
+            DouAiLog.event("auto_reply", "speech_timing", "audio_received",
+                    "at_ms=" + (System.currentTimeMillis() - startedAt) + ";bytes=" + response.sizeBytes());
             http.ensureActive();
             if (response.file == null) {
                 try (FileOutputStream stream = new FileOutputStream(output)) { stream.write(response.bytes); }
@@ -117,7 +122,11 @@ public final class SpeechSynthesis implements AutoCloseable {
             java.nio.file.Files.move(output.toPath(), named.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
             output = named;
             http.ensureActive();
+            long beforeDuration = System.currentTimeMillis();
             long duration = audioDuration(output);
+            DouAiLog.event("auto_reply", "speech_timing", "duration_parsed",
+                    "at_ms=" + (System.currentTimeMillis() - startedAt)
+                            + ";parse_ms=" + (System.currentTimeMillis() - beforeDuration));
             operation.stage("audio_validated", "bytes=" + output.length() + "; duration_ms=" + duration
                     + "; output_ref=" + DouAiLog.reference(output.getAbsolutePath()) + "; has_audio=true; has_video=false");
             http.ensureActive();
