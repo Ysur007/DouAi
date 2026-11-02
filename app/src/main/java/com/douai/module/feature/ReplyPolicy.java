@@ -137,12 +137,14 @@ public final class ReplyPolicy {
         try {
             String raw = content.optString("uri", "");
             if (raw.isEmpty()) return urls;
-            org.json.JSONObject uri = new org.json.JSONObject(raw);
-            org.json.JSONArray list = uri.optJSONArray("url_list");
-            if (list == null) return urls;
-            for (int index = 0; index < list.length(); index++) {
-                String url = list.optString(index, "").trim();
-                if (AutomationImages.isMediaUrl(url)) urls.add(url);
+            // The document is escaped and its url_list is not consistently shaped, so the addresses
+            // are pulled out of the text directly.
+            String text = raw.replace("\\/", "/");
+            java.util.regex.Matcher matcher = java.util.regex.Pattern
+                    .compile("https?://[^\"\\\\\\s,]+").matcher(text);
+            while (matcher.find()) {
+                String url = matcher.group().trim();
+                if (AutomationImages.isMediaUrl(url) && !urls.contains(url)) urls.add(url);
             }
         } catch (Throwable ignored) { }
         return urls;
