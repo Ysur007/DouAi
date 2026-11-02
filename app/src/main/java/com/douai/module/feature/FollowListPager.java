@@ -69,6 +69,10 @@ public final class FollowListPager {
                 if (users.size() > MAX_USERS) throw failure("Relationship list exceeds user limit");
             }
             requireCurrent(accountCurrent);
+            // Each page is recorded so a premature stop can be told apart from a short list.
+            com.douai.module.diagnostics.DouAiLog.event("auto_reply", "follow_paging", "page",
+                    "kind=" + kind + ";n=" + page + ";rows=" + rows + ";more=" + hasMore
+                            + ";got=" + users.size() + ";max=" + cursor.maxTime + ";off=" + cursor.offset);
             if (!hasMore) return Collections.unmodifiableMap(new LinkedHashMap<>(users));
             if (rows == 0) throw failure("Empty relationship page still has more users");
             cursor = next(kind, response, cursor);
