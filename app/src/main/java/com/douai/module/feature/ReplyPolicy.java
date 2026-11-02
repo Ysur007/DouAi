@@ -131,6 +131,23 @@ public final class ReplyPolicy {
         return label.append("]").toString();
     }
 
+    /** The sticker artwork lives inside the uri field as an escaped url_list document. */
+    private static java.util.List<String> stickerImageUrls(JSONObject content) {
+        java.util.List<String> urls = new java.util.ArrayList<>();
+        try {
+            String raw = content.optString("uri", "");
+            if (raw.isEmpty()) return urls;
+            org.json.JSONObject uri = new org.json.JSONObject(raw);
+            org.json.JSONArray list = uri.optJSONArray("url_list");
+            if (list == null) return urls;
+            for (int index = 0; index < list.length(); index++) {
+                String url = list.optString(index, "").trim();
+                if (AutomationImages.isMediaUrl(url)) urls.add(url);
+            }
+        } catch (Throwable ignored) { }
+        return urls;
+    }
+
     private static String firstText(JSONObject content, String... names) {
         for (String name : names) {
             String value = content.optString(name, "").trim();
@@ -190,10 +207,14 @@ public final class ReplyPolicy {
             // encrypted-URL path as an ordinary picture.
             // Sticker payloads carry schema and avatar urls too, so only pictures and share cards
             // are trusted to the generic url collector.
-            boolean recognize = (type == 27 || SHARE_VIDEO_TYPE == type)
+            boolean recognize = (type == 27 || SHARE_VIDEO_TYPE == type || STICKER_TYPE == type)
                     && options.enabled(LocalOptions.REPLY_RECOGNIZE_IMAGES, true);
+            // A sticker's payload also carries schema and avatar urls, so its artwork is read from
+            // the dedicated uri field instead of the generic collector.
             java.util.List<String> images = recognize
-                    ? AutomationReplyMedia.incomingImages(content) : java.util.Collections.emptyList();
+                    ? (STICKER_TYPE == type ? stickerImageUrls(content)
+                            : AutomationReplyMedia.incomingImages(content))
+                    : java.util.Collections.emptyList();
             java.util.List<String> inline = recognize
                     ? AutomationImages.inlinePayloads(content) : java.util.Collections.emptyList();
             // A picture is useless without a source; a share card still has its title to answer to.
