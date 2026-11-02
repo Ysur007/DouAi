@@ -67,7 +67,10 @@ public final class ReplyPolicy {
     private static volatile boolean stickerSampled;
 
     private static String stickerLabel(JSONObject content) {
+        // Custom stickers often leave display_name empty but carry a Chinese keyword instead.
         String name = content.optString("display_name", "").trim();
+        if (name.isEmpty()) name = content.optString("keyword", "").trim();
+        if (name.isEmpty()) name = content.optString("hint_content", "").trim();
         if (name.isEmpty()) name = content.optString("name", "").trim();
         if (name.isEmpty()) name = content.optString("danmaku_text", "").trim();
         if (!stickerSampled) {
@@ -90,8 +93,12 @@ public final class ReplyPolicy {
             DouAiLog.event("auto_reply", "content_probe", "sticker_v2",
                     "stype=" + clip(content.optString("sticker_type", ""))
                             + ";rtype=" + clip(content.optString("resource_type", ""))
-                            + ";uri=" + clip(content.optString("uri", content.optString("url", "")))
                             + ";pkg=" + clip(content.optString("package_id", "")));
+            String uri = content.optString("uri", content.optString("url", ""));
+            for (int part = 0; part * 100 < uri.length() && part < 6; part++) {
+                DouAiLog.event("auto_reply", "content_probe", "sticker_uri_" + part,
+                        uri.substring(part * 100, Math.min(uri.length(), (part + 1) * 100)));
+            }
             DouAiLog.event("auto_reply", "content_probe", "sticker_fields",
                     "display_name=" + clip(content.optString("display_name", ""))
                             + ";emoji_source=" + clip(content.optString("emoji_source", ""))
