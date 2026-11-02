@@ -11,6 +11,8 @@ import java.util.function.BooleanSupplier;
 /** Loads a complete native relationship list before exposing any membership. */
 public final class FollowListPager {
     static final int MAX_PAGES = 5000;
+    private static final java.util.concurrent.atomic.AtomicBoolean PROBED =
+            new java.util.concurrent.atomic.AtomicBoolean();
     static final int MAX_USERS = 100000;
 
     public enum Kind { FOLLOWING, FOLLOWERS }
@@ -68,9 +70,12 @@ public final class FollowListPager {
                 }
                 if (users.size() > MAX_USERS) throw failure("Relationship list exceeds user limit");
             }
+            if (kind == Kind.FOLLOWING && page == 0 && PROBED.compareAndSet(false, true)) {
+                probeFollowing(kind, uid, secUid.trim(), fetcher, response, users.keySet());
+            }
             requireCurrent(accountCurrent);
             // Each page is recorded so a premature stop can be told apart from a short list.
-            com.douai.module.diagnostics.DouAiLog.event("auto_reply", "follow_paging", "page",
+            com.douai.module.diagnostics.com.douai.module.diagnostics.DouAiLog.event("auto_reply", "follow_paging", "page",
                     "kind=" + kind + ";n=" + page + ";rows=" + rows + ";more=" + hasMore
                             + ";got=" + users.size() + ";max=" + cursor.maxTime + ";off=" + cursor.offset);
             if (!hasMore) return Collections.unmodifiableMap(new LinkedHashMap<>(users));
@@ -128,7 +133,7 @@ public final class FollowListPager {
         Object vcdValue = value(response, "vcd_count", new String[]{"vcdCount"},
                 new String[]{"getVcdCount"});
         int vcdCount = vcdValue == null ? previous.vcdCount : requiredInt(vcdValue, "vcd_count");
-        com.douai.module.diagnostics.DouAiLog.event("auto_reply", "follow_paging", "cursor",
+        com.douai.module.diagnostics.com.douai.module.diagnostics.DouAiLog.event("auto_reply", "follow_paging", "cursor",
                 "kind=" + kind + ";max=" + maxTime + ";min=" + minTime + ";off=" + offset);
         return new Cursor(maxTime, minTime, offset, storePage, vcdCount);
     }
@@ -159,6 +164,48 @@ public final class FollowListPager {
         if (status != null && requiredInteger(status, "status_code") != 0
                 || error != null && requiredInteger(error, "error_code") != 0) {
             throw failure("Relationship API returned an error");
+        }
+    }
+
+    /** Asks the endpoint the same second page four ways so one run identifies the real cursor. */
+    private static void probeFollowing(Kind kind, String uid, String secUid, Fetcher fetcher,
+                                       Object first, Set<String> seen) {
+        try {
+            long respMax = requiredNonnegative(value(first, "max_time", new String[]{"maxTime"},
+                    new String[]{"getMaxTime"}), "max_time");
+            long respMin = requiredNonnegative(value(first, "min_time", new String[]{"minTime"},
+                    new String[]{"getMinTime"}), "min_time");
+            Object storeValue = value(first, "store_page", new String[]{"storePage"}, new String[]{"getStorePage"});
+            String storePage = storeValue instanceof String ? (String) storeValue : "";
+            long[][] times = {{respMax, respMin}, {respMin, 0}, {0, 0}, {respMax, respMin}};
+            int[] offsets = {0, 30, 30, 30};
+            for (int index = 0; index < times.length; index++) {
+                Object response;
+                int rows = 0;
+                int fresh = 0;
+                try {
+                    response = fetcher.fetch(kind, query(kind, uid, secUid,
+                            new Cursor(times[index][0], times[index][1], offsets[index], storePage, 0)));
+                    Object items = value(response, "followings", new String[]{"items"}, new String[]{"getItems"});
+                    if (items instanceof Iterable<?>) {
+                        for (Object user : (Iterable<?>) items) {
+                            rows++;
+                            String memberUid = uid(value(user, "uid", new String[]{"uid"}, new String[]{"getUid"}));
+                            if (!memberUid.isEmpty() && !seen.contains(memberUid)) fresh++;
+                        }
+                    }
+                } catch (Throwable failure) {
+                    com.douai.module.diagnostics.DouAiLog.event("auto_reply", "follow_paging", "probe",
+                            "v=" + index + ";error=" + failure.getClass().getSimpleName());
+                    continue;
+                }
+                com.douai.module.diagnostics.DouAiLog.event("auto_reply", "follow_paging", "probe",
+                        "v=" + index + ";max=" + times[index][0] + ";min=" + times[index][1]
+                                + ";off=" + offsets[index] + ";rows=" + rows + ";fresh=" + fresh);
+            }
+        } catch (Throwable failure) {
+            com.douai.module.diagnostics.DouAiLog.event("auto_reply", "follow_paging", "probe_failed",
+                    failure.getClass().getSimpleName());
         }
     }
 
