@@ -108,6 +108,13 @@ public final class PushWakeHook {
             android.os.PowerManager power =
                     (android.os.PowerManager) context.getSystemService(android.content.Context.POWER_SERVICE);
             boolean interactive = power != null && power.isInteractive();
+            if (interactive) {
+                // The point of this feature is the pocket case; with the screen on the user is
+                // already looking at the phone and must not be pulled out of the current app.
+                lastResult = "skipped_screen_on:" + reason;
+                record(context, lastResult);
+                return;
+            }
             android.os.PowerManager.WakeLock lock = null;
             if (power != null) {
                 try {
