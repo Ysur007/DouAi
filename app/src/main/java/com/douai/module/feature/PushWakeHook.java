@@ -108,10 +108,13 @@ public final class PushWakeHook {
             android.os.PowerManager power =
                     (android.os.PowerManager) context.getSystemService(android.content.Context.POWER_SERVICE);
             boolean interactive = power != null && power.isInteractive();
-            if (interactive) {
-                // The point of this feature is the pocket case; with the screen on the user is
-                // already looking at the phone and must not be pulled out of the current app.
-                lastResult = "skipped_screen_on:" + reason;
+            // A notification briefly lights the screen, so isInteractive alone misreads the pocket
+            // case; the lock state is what actually separates it from active use.
+            android.app.KeyguardManager keyguard =
+                    (android.app.KeyguardManager) context.getSystemService(android.content.Context.KEYGUARD_SERVICE);
+            boolean locked = keyguard != null && keyguard.isKeyguardLocked();
+            if (!locked) {
+                lastResult = "skipped_unlocked:" + reason + ";screen_on=" + interactive;
                 record(context, lastResult);
                 return;
             }
