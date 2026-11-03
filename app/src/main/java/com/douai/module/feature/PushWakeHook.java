@@ -107,17 +107,9 @@ public final class PushWakeHook {
             // With the screen off the device may be dozing, so the CPU is held awake for the launch.
             android.os.PowerManager power =
                     (android.os.PowerManager) context.getSystemService(android.content.Context.POWER_SERVICE);
+            // Both a locked and an unlocked screen are wanted here; the only thing that stops a
+            // wake is the host already running, which is checked above.
             boolean interactive = power != null && power.isInteractive();
-            // A notification briefly lights the screen, so isInteractive alone misreads the pocket
-            // case; the lock state is what actually separates it from active use.
-            android.app.KeyguardManager keyguard =
-                    (android.app.KeyguardManager) context.getSystemService(android.content.Context.KEYGUARD_SERVICE);
-            boolean locked = keyguard != null && keyguard.isKeyguardLocked();
-            if (!locked) {
-                lastResult = "skipped_unlocked:" + reason + ";screen_on=" + interactive;
-                record(context, lastResult);
-                return;
-            }
             android.os.PowerManager.WakeLock lock = null;
             if (power != null) {
                 try {
