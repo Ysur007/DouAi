@@ -53,7 +53,7 @@ public final class PushWakeHook {
         String channel = notification.getChannelId();
         android.util.Log.i("DouAi", "notify_seen channel=" + channel);
         if (channel == null || !channel.contains(TARGET)) return;
-        wake(channel);
+        wake(channel, notification.contentIntent);
     }
 
     /** Reports whether the host process is listed; the size reveals how much the system shows us. */
@@ -83,7 +83,7 @@ public final class PushWakeHook {
         } catch (Throwable ignored) { }
     }
 
-    private static void wake(String reason) {
+    private static void wake(String reason, android.app.PendingIntent notificationIntent) {
         long now = System.currentTimeMillis();
         if (now - lastWake < MIN_INTERVAL_MS) return;
         lastWake = now;
@@ -122,8 +122,19 @@ public final class PushWakeHook {
                     lock.acquire(15_000L);
                 } catch (Throwable ignored) { }
             }
-            // Launch behind the current task so the user is not pulled out of whatever they were doing.
-            String stage = "behind_ok";
+            // A notification's own PendingIntent is launched as the notification, which the system
+            // still honours while the device sleeps; a plain startActivity is silently dropped.
+            String stage = "no_pending";
+            if (notificationIntent != null) {
+                try {
+                    notificationIntent.send();
+                    lastResult = "pending_sent:" + reason;
+                    record(context, lastResult);
+                    return;
+                } catch (Throwable failure) {
+                    stage = "pending_failed:" + failure.getClass().getSimpleName();
+                }
+            }
             try {
                 // setLaunchTaskBehind is not part of the public SDK, so it is reached reflectively.
                 android.app.ActivityOptions options = android.app.ActivityOptions.makeBasic();
