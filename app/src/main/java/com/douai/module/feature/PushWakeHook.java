@@ -65,7 +65,13 @@ public final class PushWakeHook {
                     manager.getRunningAppProcesses();
             if (processes == null) return "procs=none";
             for (android.app.ActivityManager.RunningAppProcessInfo info : processes) {
-                if (TARGET.equals(info.processName)) return "alive;procs=" + processes.size();
+                if (!TARGET.equals(info.processName)) continue;
+                // A cached entry can linger after the process is gone, so only a live service
+                // counts as running; anything else is treated as needing a wake.
+                boolean active = info.importance
+                        <= android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE;
+                return (active ? "alive" : "idle") + ";procs=" + processes.size()
+                        + ";imp=" + info.importance;
             }
             return "gone;procs=" + processes.size();
         } catch (Throwable failure) {
