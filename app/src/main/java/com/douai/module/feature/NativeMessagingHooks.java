@@ -846,27 +846,29 @@ public final class NativeMessagingHooks implements AutoCloseable {
                 com.douai.module.config.ConversationMemory.record(
                         "reply:" + account + ":" + conversation, text, response, models);
             } catch (Throwable ignored) { }
-            SpeechPreparation.Audio audio;
+            SpeechPreparation.Audio preparedAudio;
             if (current.enabled("reply_voice")) {
                 if (audioSender == null) {
                     operation.trace.stage("speech_fallback", "fallback=text;error=sender_unavailable");
-                    audio = null;
+                    preparedAudio = null;
                 } else {
                     operation.stage = Stage.SPEECH;
                     operation.response = response;
                     operation.preparation("speech", valid);
+                    SpeechPreparation.Audio attempt = null;
                     try {
-                        audio = speechPreparer.prepare(context, response, current, 120_000, valid);
+                        attempt = speechPreparer.prepare(context, response, current, 120_000, valid);
                     } catch (Throwable speechFailure) {
                         // A failed synthesis must not swallow the reply; the text goes out instead.
                         operation.stage = Stage.QUEUE;
                         operation.trace.stage("speech_fallback",
                                 "fallback=text;error=" + speechFailure.getClass().getSimpleName());
-                        audio = null;
                     }
-                    if (audio != null && !valid.getAsBoolean()) { audio.delete(); return; }
+                    if (attempt != null && !valid.getAsBoolean()) { attempt.delete(); return; }
+                    preparedAudio = attempt;
                 }
-            } else audio = null;
+            } else preparedAudio = null;
+            final SpeechPreparation.Audio audio = preparedAudio;
             if (!operation.handoff()) { if (audio != null) audio.delete(); return; }
             java.util.concurrent.atomic.AtomicBoolean submitted = new java.util.concurrent.atomic.AtomicBoolean();
             operation.response = response;
