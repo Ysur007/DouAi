@@ -848,12 +848,24 @@ public final class NativeMessagingHooks implements AutoCloseable {
             } catch (Throwable ignored) { }
             SpeechPreparation.Audio audio;
             if (current.enabled("reply_voice")) {
-                if (audioSender == null) throw new IllegalStateException("Native audio sender unavailable");
-                operation.stage = Stage.SPEECH;
-                operation.response = response;
-                operation.preparation("speech", valid);
-                audio = speechPreparer.prepare(context, response, current, 120_000, valid);
-                if (!valid.getAsBoolean()) { audio.delete(); return; }
+                if (audioSender == null) {
+                    operation.trace.stage("speech_fallback", "fallback=text;error=sender_unavailable");
+                    audio = null;
+                } else {
+                    operation.stage = Stage.SPEECH;
+                    operation.response = response;
+                    operation.preparation("speech", valid);
+                    try {
+                        audio = speechPreparer.prepare(context, response, current, 120_000, valid);
+                    } catch (Throwable speechFailure) {
+                        // A failed synthesis must not swallow the reply; the text goes out instead.
+                        operation.stage = Stage.QUEUE;
+                        operation.trace.stage("speech_fallback",
+                                "fallback=text;error=" + speechFailure.getClass().getSimpleName());
+                        audio = null;
+                    }
+                    if (audio != null && !valid.getAsBoolean()) { audio.delete(); return; }
+                }
             } else audio = null;
             if (!operation.handoff()) { if (audio != null) audio.delete(); return; }
             java.util.concurrent.atomic.AtomicBoolean submitted = new java.util.concurrent.atomic.AtomicBoolean();
