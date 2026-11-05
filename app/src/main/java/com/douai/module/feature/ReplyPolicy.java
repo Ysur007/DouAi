@@ -154,6 +154,30 @@ public final class ReplyPolicy {
         return urls;
     }
 
+    /** Prompt wording alone does not bound the answer, so the text is cut at a sentence edge. */
+    static String limitLength(String text, int maxCodePoints) {
+        String clean = text.trim().replaceAll("\\s+", " ");
+        if (clean.codePointCount(0, clean.length()) <= maxCodePoints) return clean;
+        java.util.List<String> sentences = new java.util.ArrayList<>();
+        int start = 0;
+        for (int index = 0; index < clean.length(); index++) {
+            char c = clean.charAt(index);
+            if (c == '\u3002' || c == '\uFF01' || c == '\uFF1F' || c == '\uFF1B'
+                    || c == '!' || c == '?' || c == ';' || c == '\n') {
+                sentences.add(clean.substring(start, index + 1));
+                start = index + 1;
+            }
+        }
+        if (start < clean.length()) sentences.add(clean.substring(start));
+        StringBuilder kept = new StringBuilder();
+        for (String sentence : sentences) {
+            if (kept.length() + sentence.length() > maxCodePoints) break;
+            kept.append(sentence);
+        }
+        if (kept.length() == 0) kept.append(clean, 0, clean.offsetByCodePoints(0, maxCodePoints));
+        return kept.toString().trim();
+    }
+
     private static String firstText(JSONObject content, String... names) {
         for (String name : names) {
             String value = content.optString(name, "").trim();

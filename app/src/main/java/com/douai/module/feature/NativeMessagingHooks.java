@@ -830,13 +830,13 @@ public final class NativeMessagingHooks implements AutoCloseable {
             if (models != null) {
                 modelName = models.selected().modelName;
                 operation.modelName = modelName;
-                response = ai.reply("reply:" + account + ":" + conversation, text, images, models,
+                response = ReplyPolicy.limitLength(ai.reply("reply:" + account + ":" + conversation, text, images, models,
                         secondary, false, "", imageCount -> {
                             operation.requestImageCount = imageCount;
                             operation.modelRequestSent = true;
                             operation.trace.stage("model_request_sent", "images=" + imageCount + ";business_success=false");
-                        });
-            } else response = ReplyPolicy.reply(text, current, random);
+                        }), 60);
+            } else response = ReplyPolicy.limitLength(ReplyPolicy.reply(text, current, random), 60);
             operation.generationMillis = SystemClock.elapsedRealtime() - generationStarted;
             if (!operation.current()) return;
             if (!replyStillAllowed(values, account, current)) return;
