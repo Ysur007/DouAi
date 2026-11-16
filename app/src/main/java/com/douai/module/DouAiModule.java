@@ -393,6 +393,7 @@ public final class DouAiModule extends XposedModule {
                             }
                             Object result = chain.proceed();
                             if (application instanceof Application) {
+                                com.douai.module.feature.HostHeartbeat.start((Application) application);
                                 try {
                                     ensureHostUiController((Application) application);
                                     ExtendedSettings startupSettings = extendedSettings;

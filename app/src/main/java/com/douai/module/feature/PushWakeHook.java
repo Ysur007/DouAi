@@ -16,8 +16,12 @@ public final class PushWakeHook {
     private static final String TARGET = "com.ss.android.ugc.aweme";
     private static final String LAUNCH = "com.ss.android.ugc.aweme.splash.SplashActivity";
     private static final long MIN_INTERVAL_MS = 180_000L;
+    /** Three missed beats means the host is gone, frozen, or no longer reporting. */
+    private static final long HEARTBEAT_STALE_MS = 100_000L;
 
     private static volatile long lastWake;
+    private static volatile long lastHeartbeat;
+    private static volatile boolean receiverReady;
     private static volatile String lastResult = "idle";
 
     private PushWakeHook() { }
@@ -27,6 +31,7 @@ public final class PushWakeHook {
         hookNotify(framework, "notify", int.class, Notification.class);
         hookNotify(framework, "notifyAsPackage", String.class, String.class, int.class, Notification.class);
         hookNotify(framework, "notifyAsPackage", String.class, int.class, Notification.class);
+        startReceiverSetup();
         android.util.Log.i("DouAi", "push_wake hooked result=" + lastResult);
     }
 
@@ -56,26 +61,57 @@ public final class PushWakeHook {
         wake(channel, notification.contentIntent);
     }
 
-    /** Reports whether the host process is listed; the size reveals how much the system shows us. */
+    /** Silence from the host is the only reliable signal the push side can observe. */
     private static String hostState(android.content.Context context) {
-        try {
-            android.app.ActivityManager manager =
-                    (android.app.ActivityManager) context.getSystemService(android.content.Context.ACTIVITY_SERVICE);
-            java.util.List<android.app.ActivityManager.RunningAppProcessInfo> processes =
-                    manager.getRunningAppProcesses();
-            if (processes == null) return "procs=none";
-            for (android.app.ActivityManager.RunningAppProcessInfo info : processes) {
-                if (!TARGET.equals(info.processName)) continue;
-                // A cached entry can linger after the process is gone, so only a live service
-                // counts as running; anything else is treated as needing a wake.
-                boolean active = info.importance
-                        <= android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE;
-                return (active ? "alive" : "idle") + ";procs=" + processes.size()
-                        + ";imp=" + info.importance;
+        long beat = lastHeartbeat;
+        if (beat <= 0L) return "stale;beat=never";
+        long age = System.currentTimeMillis() - beat;
+        return (age < HEARTBEAT_STALE_MS ? "alive" : "stale") + ";beat_age=" + age;
+    }
+
+    /** The receiver needs an application context, which is not available during package load. */
+    private static void startReceiverSetup() {
+        Thread thread = new Thread(() -> {
+            for (int attempt = 0; attempt < 120 && !receiverReady; attempt++) {
+                try {
+                    Class<?> activityThread = Class.forName("android.app.ActivityThread");
+                    Object application = activityThread.getMethod("currentApplication").invoke(null);
+                    if (application instanceof android.content.Context) {
+                        registerReceiver((android.content.Context) application);
+                        return;
+                    }
+                    Thread.sleep(250L);
+                } catch (InterruptedException stopped) {
+                    return;
+                } catch (Throwable ignored) {
+                    try { Thread.sleep(250L); } catch (InterruptedException stopped) { return; }
+                }
             }
-            return "gone;procs=" + processes.size();
+            android.util.Log.w("DouAi", "push_wake receiver not registered");
+        }, "DouAi-PushReceiver");
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    private static void registerReceiver(android.content.Context context) {
+        try {
+            android.content.IntentFilter filter =
+                    new android.content.IntentFilter(com.douai.module.feature.HostHeartbeat.ACTION);
+            android.content.BroadcastReceiver receiver = new android.content.BroadcastReceiver() {
+                @Override
+                public void onReceive(android.content.Context source, android.content.Intent intent) {
+                    lastHeartbeat = System.currentTimeMillis();
+                }
+            };
+            if (android.os.Build.VERSION.SDK_INT >= 33) {
+                context.registerReceiver(receiver, filter, android.content.Context.RECEIVER_EXPORTED);
+            } else {
+                context.registerReceiver(receiver, filter);
+            }
+            receiverReady = true;
+            android.util.Log.i("DouAi", "push_wake receiver ready");
         } catch (Throwable failure) {
-            return "unknown:" + failure.getClass().getSimpleName();
+            android.util.Log.w("DouAi", "push_wake receiver failed: " + failure.getClass().getSimpleName());
         }
     }
 
