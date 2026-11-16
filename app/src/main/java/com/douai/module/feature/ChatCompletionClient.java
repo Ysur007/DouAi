@@ -429,7 +429,9 @@ public final class ChatCompletionClient {
             try (java.io.OutputStream output = connection.getOutputStream()) {
                 JsonRequestBody.write(body, output, () -> ensureActive(request));
             }
-            request.trace.stage("model_transport_sent", "body_bytes=" + bodyBytes + ";business_success=false");
+            request.trace.stage("model_transport_sent", "body_bytes=" + bodyBytes
+                    + ";elapsed_ms=" + (deadline != null ? deadline.elapsedMillis() : -1)
+                    + ";business_success=false");
             try { request.trace.wrap(() -> requestSent.accept(images.size())).run(); }
             catch (RuntimeException ignored) { }
             diagnostic(config, secondaryPrompt, prior.size(), "sent", 0);
@@ -471,6 +473,11 @@ public final class ChatCompletionClient {
             return result;
         } catch (Exception error) {
             request.trace.error("model_transport", error);
+            // How much of the body had arrived separates a slow first byte from a mid-stream cut.
+            request.trace.stage("model_transport_detail",
+                    "type=" + error.getClass().getSimpleName()
+                            + ";received=" + request.receivedBytes
+                            + ";elapsed_ms=" + (deadline != null ? deadline.elapsedMillis() : -1));
             if (request.ownsTrace) request.trace.finish(error instanceof java.net.SocketTimeoutException ? DouAiLog.Outcome.TIMED_OUT : error instanceof CancellationException ? DouAiLog.Outcome.CANCELLED : DouAiLog.Outcome.FAILED, "model_request_failed", "type=" + error.getClass().getSimpleName());
             diagnostic(config, secondaryPrompt, prior.size(), "failed", 0);
             ensureActive(request);
@@ -496,10 +503,12 @@ public final class ChatCompletionClient {
         InputStream guarded = new FilterInputStream(input) {
             @Override public int read() throws IOException {
                 deadline.beforeIo(request, connection); int value = in.read();
+                if (value >= 0) request.receivedBytes++;
                 deadline.beforeIo(request, connection); return value;
             }
             @Override public int read(byte[] buffer, int offset, int length) throws IOException {
                 deadline.beforeIo(request, connection); int read = in.read(buffer, offset, length);
+                if (read > 0) request.receivedBytes += read;
                 deadline.beforeIo(request, connection); return read;
             }
         };
@@ -585,6 +594,7 @@ public final class ChatCompletionClient {
     private static CancellationException cancelled() { return new CancellationException("请求已取消"); }
 
     private static final class ActiveRequest {
+        volatile long receivedBytes;
         final boolean ownsTrace = DouAiLog.current() == null;
         final DouAiLog.Operation trace = AutomationTrace.capture("ai_model", "request");
         volatile boolean cancelled;
