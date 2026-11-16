@@ -11,7 +11,7 @@ import java.util.concurrent.TimeUnit;
 public final class HostHeartbeat {
     public static final String ACTION = "com.douai.action.HOST_ALIVE";
     public static final String PUSH_PACKAGE = "com.xiaomi.xmsf";
-    static final long INTERVAL_SECONDS = 30L;
+    static final long INTERVAL_SECONDS = 15L;
 
     private static volatile boolean started;
 

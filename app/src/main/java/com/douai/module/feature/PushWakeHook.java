@@ -17,7 +17,7 @@ public final class PushWakeHook {
     private static final String LAUNCH = "com.ss.android.ugc.aweme.splash.SplashActivity";
     private static final long MIN_INTERVAL_MS = 180_000L;
     /** Three missed beats means the host is gone, frozen, or no longer reporting. */
-    private static final long HEARTBEAT_STALE_MS = 100_000L;
+    private static final long HEARTBEAT_STALE_MS = 45_000L;
 
     private static volatile long lastWake;
     private static volatile long lastHeartbeat;
@@ -61,12 +61,31 @@ public final class PushWakeHook {
         wake(channel, notification.contentIntent);
     }
 
-    /** Silence from the host is the only reliable signal the push side can observe. */
+    /**
+     * A fresh beat alone is not enough: the host can die between two beats, and the push side would
+     * keep waiting for a report that never comes. Both signals must agree before a wake is skipped.
+     */
     private static String hostState(android.content.Context context) {
         long beat = lastHeartbeat;
-        if (beat <= 0L) return "stale;beat=never";
-        long age = System.currentTimeMillis() - beat;
-        return (age < HEARTBEAT_STALE_MS ? "alive" : "stale") + ";beat_age=" + age;
+        long age = beat <= 0L ? -1L : System.currentTimeMillis() - beat;
+        boolean beatFresh = age >= 0L && age < HEARTBEAT_STALE_MS;
+        boolean listed = processListed(context);
+        String detail = ";beat_age=" + age + ";listed=" + listed;
+        return (beatFresh && listed ? "alive" : "stale") + detail;
+    }
+
+    private static boolean processListed(android.content.Context context) {
+        try {
+            android.app.ActivityManager manager =
+                    (android.app.ActivityManager) context.getSystemService(android.content.Context.ACTIVITY_SERVICE);
+            java.util.List<android.app.ActivityManager.RunningAppProcessInfo> processes =
+                    manager.getRunningAppProcesses();
+            if (processes == null) return false;
+            for (android.app.ActivityManager.RunningAppProcessInfo info : processes) {
+                if (TARGET.equals(info.processName)) return true;
+            }
+        } catch (Throwable ignored) { }
+        return false;
     }
 
     /** The receiver needs an application context, which is not available during package load. */
