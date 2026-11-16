@@ -857,7 +857,8 @@ public final class NativeMessagingHooks implements AutoCloseable {
                     operation.preparation("speech", valid);
                     SpeechPreparation.Audio attempt = null;
                     try {
-                        attempt = speechPreparer.prepare(context, response, current, 120_000, valid);
+                        // Waiting a full minute for audio that usually takes seconds costs more than it saves.
+                        attempt = speechPreparer.prepare(context, response, current, 20_000, valid);
                     } catch (Throwable speechFailure) {
                         // A failed synthesis must not swallow the reply; the text goes out instead.
                         operation.stage = Stage.QUEUE;
